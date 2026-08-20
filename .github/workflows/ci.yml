@@ -8,6 +8,24 @@ permissions:
   contents: read
 
 jobs:
+  # hashFiles() is a workspace function and is not available in a job-level
+  # `if:` -- using it there makes the whole workflow fail to start, with zero
+  # jobs and no annotation to explain why. Detect in a step instead and gate the
+  # optional jobs on this output.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.check.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -f web/package-lock.json ]; then
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=false" >> "$GITHUB_OUTPUT"
+          fi
+
   python:
     runs-on: ubuntu-latest
     steps:
@@ -26,16 +44,17 @@ jobs:
         run: |
           git remote add port https://github.com/rubensanchezrivero/poketokenbar-plasma || true
           git fetch --quiet port main
-          echo '### Engine drift vs rubensanchezrivero/poketokenbar-plasma' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          git diff --stat port/main -- poketokenbar/ >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '### Engine drift vs rubensanchezrivero/poketokenbar-plasma'
+            echo '```'
+            git diff --stat port/main -- poketokenbar/ || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   web:
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
     runs-on: ubuntu-latest
-    # The frontend does not exist until the SPA lands; skip cleanly until then
-    # rather than reporting a red job with no signal.
-    if: hashFiles('web/package-lock.json') != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,13 +72,14 @@ jobs:
         working-directory: web
 
   image:
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
     runs-on: ubuntu-latest
-    # Builds without pushing: catches a broken Dockerfile on the PR rather than
-    # at tag time, when the only signal would be a failed release.
-    if: hashFiles('web/package-lock.json') != ''
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      # Builds without pushing: a broken Dockerfile fails the PR rather than
+      # the release tag, where the only signal would be a failed publish.
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -68,18 +88,17 @@ jobs:
           tags: poketokenweb:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: The image must start, serve /healthz, and stop cleanly
+      - name: The image must start, serve, and stop cleanly
         run: |
-          docker run -d --name ptw -p 18080:8080 \
-            -e HOME=/config -e TZ=UTC poketokenweb:ci
-          for i in $(seq 1 60); do
+          docker run -d --name ptw -p 18080:8080 -e HOME=/config -e TZ=UTC poketokenweb:ci
+          for _ in $(seq 1 60); do
             if curl -sf localhost:18080/healthz > /dev/null; then break; fi
             sleep 2
           done
           curl -sf localhost:18080/healthz
           curl -sf localhost:18080/api/config
-          # Exercises the entrypoint's signal path: a handler that deadlocks
-          # would hit the 30s kill timeout and fail here.
+          # Exercises the entrypoint's signal path end to end: a handler that
+          # deadlocks would hit the stop timeout and fail here.
           timeout 30 docker stop ptw
           test "$(docker inspect -f '{{.State.ExitCode}}' ptw)" = "0"
       - name: Container logs
