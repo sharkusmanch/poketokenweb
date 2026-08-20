@@ -1,0 +1,769 @@
+/* PokeTokenBar web UI — mobile-first dark theme.
+   This file is imported by App.tsx; `vite build` fails outright if it is
+   missing, which is exactly how the previous attempt broke. Every class the
+   components emit has a rule here, and src/styles.test.ts enforces that
+   mechanically rather than by memory. */
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2430;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --crit: #f85149;
+  --legendary: #f0b132;
+  --rare: #a371f7;
+  --uncommon: #3fb950;
+  --common: #8b949e;
+  --tabbar-height: 56px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overscroll-behavior-y: none;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+/* --- shell ------------------------------------------------------------- */
+
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+}
+
+.app-centred {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 10px) 12px 10px;
+  background: rgba(13, 17, 23, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+
+.appbar-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.appbar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.content {
+  flex: 1;
+  padding: 12px;
+}
+
+.loading {
+  color: var(--muted);
+  font-size: 28px;
+}
+
+.banner {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.banner-warn {
+  background: rgba(210, 153, 34, 0.16);
+  color: var(--warn);
+}
+
+.banner-error {
+  background: rgba(248, 81, 73, 0.16);
+  color: var(--crit);
+}
+
+.alert {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--crit);
+  border-radius: 10px;
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--crit);
+  font-size: 14px;
+}
+
+/* --- tab bar (fixed, clear of the iOS home indicator) ------------------ */
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  height: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.tabbar-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tabbar-on {
+  color: var(--accent);
+}
+
+.tabbar-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.tabbar-label {
+  white-space: nowrap;
+}
+
+/* --- panels and cards -------------------------------------------------- */
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tab-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.card {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.card-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.card-error {
+  border-color: var(--crit);
+}
+
+.card-error ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--crit);
+  font-size: 13px;
+}
+
+.metric {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 2px 0 0;
+}
+
+.empty {
+  padding: 32px 12px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.burn {
+  margin: 6px 0 0;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+/* --- companion --------------------------------------------------------- */
+
+.companion-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+}
+
+.companion-title {
+  margin: 0;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.goal {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.nature,
+.forms,
+.count {
+  color: var(--muted);
+}
+
+.track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.track-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+}
+
+.evo-line {
+  display: flex;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evo-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.evo-current {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.evo-locked {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.evo-name {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- limits ------------------------------------------------------------ */
+
+.limits-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.limit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.limit-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.limit-label {
+  color: var(--muted);
+}
+
+.limit-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.limit-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.limit-fill {
+  height: 100%;
+  background: var(--ok);
+}
+
+/* Level classes are derived from utilization against the configured
+   thresholds — never from limits.*.severity, which reads "normal" at 51% and
+   at 97% alike. */
+.limit-fill-ok {
+  background: var(--ok);
+}
+
+.limit-fill-warn {
+  background: var(--warn);
+}
+
+.limit-fill-crit {
+  background: var(--crit);
+}
+
+.limit-ok .limit-value {
+  color: var(--ok);
+}
+
+.limit-warn .limit-value {
+  color: var(--warn);
+}
+
+.limit-crit .limit-value {
+  color: var(--crit);
+}
+
+.limit-reset,
+.limit-plan {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* --- generic rows ------------------------------------------------------ */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
+}
+
+.row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.row-title {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-desc,
+.row-effect,
+.row-price,
+.row-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.row-note {
+  color: var(--warn);
+}
+
+.row-price {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- buttons ----------------------------------------------------------- */
+
+.btn {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-buy {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-ghost {
+  background: none;
+  border-color: transparent;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.btn-danger {
+  border-color: var(--crit);
+  background: rgba(248, 81, 73, 0.14);
+  color: var(--crit);
+}
+
+/* --- egg purchase confirmation ----------------------------------------- */
+
+.confirm {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.confirm-text {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--crit);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --- badges and chips -------------------------------------------------- */
+
+.badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.badge-shiny {
+  color: var(--legendary);
+  border-color: var(--legendary);
+}
+
+.badge-tier {
+  color: var(--rare);
+  border-color: var(--rare);
+}
+
+.badge-active {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.badge-raising {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.shiny-mark {
+  color: var(--legendary);
+}
+
+.rarity-counts {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.chip-label {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.chip-count {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.rarity,
+.rarity-legendary {
+  color: var(--legendary);
+}
+
+.rarity-rare {
+  color: var(--rare);
+}
+
+.rarity-uncommon {
+  color: var(--uncommon);
+}
+
+.rarity-common {
+  color: var(--common);
+}
+
+/* --- collection -------------------------------------------------------- */
+
+.segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.seg {
+  flex: 1;
+  padding: 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg-on {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.dex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dex-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.dex-raising {
+  border-style: dashed;
+  border-color: var(--accent);
+}
+
+.dex-name {
+  font-size: 11px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.catch-log .row {
+  flex-direction: row;
+  align-items: center;
+}
+
+.chain {
+  display: flex;
+  gap: 2px;
+}
+
+/* --- events ------------------------------------------------------------ */
+
+.events-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.event-icon {
+  font-size: 22px;
+}
+
+/* --- settings ---------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.field:last-child {
+  border-bottom: 0;
+}
+
+.field-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field-ok {
+  font-size: 12px;
+  color: var(--ok);
+}
+
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 16px; /* 16px stops iOS Safari zooming the page on focus */
+  min-height: 44px;
+}
+
+/* --- periods ----------------------------------------------------------- */
+
+.periods-card {
+  display: flex;
+  gap: 12px;
+}
+
+.period {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.period-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.period-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- sprites ----------------------------------------------------------- */
+
+.sprite {
+  image-rendering: pixelated;
+  object-fit: contain;
+  flex: none;
+}
+
+.sprite-sm {
+  width: 32px;
+  height: 32px;
+  font-size: 24px;
+}
+
+.sprite-md {
+  width: 44px;
+  height: 44px;
+  font-size: 32px;
+}
+
+.sprite-lg {
+  width: 112px;
+  height: 112px;
+  font-size: 72px;
+}
+
+.sprite-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.sprite-placeholder {
+  color: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
