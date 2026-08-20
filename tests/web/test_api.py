@@ -686,3 +686,57 @@ def test_validate_config_never_raises_typeerror_for_any_json():
             pass
         except Exception as exc:  # pragma: no cover - failure path
             pytest.fail(f"{key!r}/{value!r} raised {type(exc).__name__}: {exc}")
+
+
+# --- account redaction -----------------------------------------------------
+# This app has no authentication of its own and is meant to be self-hosted by
+# strangers, so the operator's Anthropic identity must not ride along in a
+# payload that any client can fetch.
+
+_ACCOUNT_PAYLOAD = {
+    "limits": {
+        "session": {"utilization": 83.0, "resets_at": None, "severity": "normal"},
+        "plan": "max",
+        "account": {
+            "uuid": "71647f1c-8e7c-48a6-975c-3144960e8741",
+            "email": "someone@example.com",
+            "display_name": "Marcus",
+            "organization": "someone@example.com's Organization",
+        },
+    },
+    "errors": [],
+}
+
+
+def test_public_state_strips_account_identity(tmp_path):
+    out = api.public_state(_ACCOUNT_PAYLOAD, tmp_path)
+    assert out["limits"]["account"] == {"display_name": "Marcus"}
+
+
+@pytest.mark.parametrize("secret", [
+    "71647f1c-8e7c-48a6-975c-3144960e8741",
+    "someone@example.com",
+    "Organization",
+])
+def test_no_account_secret_survives_serialisation(tmp_path, secret):
+    import json as _json
+    assert secret not in _json.dumps(api.public_state(_ACCOUNT_PAYLOAD, tmp_path))
+
+
+def test_display_name_is_preserved_for_the_ui(tmp_path):
+    out = api.public_state(_ACCOUNT_PAYLOAD, tmp_path)
+    assert out["limits"]["account"]["display_name"] == "Marcus"
+    assert out["limits"]["plan"] == "max"
+
+
+def test_redaction_tolerates_a_missing_or_odd_account(tmp_path):
+    assert api.public_state({"limits": {}, "errors": []}, tmp_path)["limits"] == {}
+    assert api.public_state({"limits": {"account": None}, "errors": []}, tmp_path)
+    assert api.public_state({"errors": []}, tmp_path) is not None
+
+
+def test_redaction_does_not_mutate_the_callers_payload(tmp_path):
+    import copy as _copy
+    original = _copy.deepcopy(_ACCOUNT_PAYLOAD)
+    api.public_state(_ACCOUNT_PAYLOAD, tmp_path)
+    assert _ACCOUNT_PAYLOAD == original

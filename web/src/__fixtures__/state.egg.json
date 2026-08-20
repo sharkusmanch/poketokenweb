@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "updated_at": 1787196320.3724809,
+  "scanning": false,
+  "errors": [],
+  "today": {
+    "total_tokens": 529546967,
+    "total_cost": 411.18772974999945,
+    "tokens_grouped": "529,546,967",
+    "tokens_compact": "529.5M",
+    "cost_text": "$411.19"
+  },
+  "providers": {
+    "claude_code": {
+      "total_tokens": 529546967,
+      "total_tokens_text": "529,546,967",
+      "total_tokens_compact": "529.5M",
+      "total_cost": 411.18772974999945,
+      "input_tokens": 3474,
+      "output_tokens": 2055190,
+      "cache_creation_tokens": 17386277,
+      "cache_read_tokens": 510102026
+    }
+  },
+  "limits": {
+    "session": {
+      "utilization": 51.0,
+      "resets_at": "2026-08-20T04:59:59.595435+00:00",
+      "severity": "normal"
+    },
+    "weekly": {
+      "utilization": 36.0,
+      "resets_at": "2026-08-24T14:59:59.595461+00:00",
+      "severity": "normal"
+    },
+    "plan": "max",
+    "account": {
+      "uuid": "71647f1c-8e7c-48a6-975c-3144960e8741",
+      "email": "jnjtq66w@msanchez.io",
+      "display_name": "Marcus",
+      "organization": "jnjtq66w@msanchez.io's Organization"
+    }
+  },
+  "companion": {
+    "stage": "egg",
+    "label": "🥚0%",
+    "egg_usage": 0,
+    "egg_progress": 0.0,
+    "egg_tier": null,
+    "sprite_path": "",
+    "dex_count": 0,
+    "spendable_tokens": 0,
+    "spendable_text": "0",
+    "display_state": "egg",
+    "status_message": "An egg is warming up."
+  },
+  "shop": [
+    {
+      "key": "mint",
+      "kind": "item",
+      "price": 100000000,
+      "price_text": "100M",
+      "label": "Mint",
+      "description": "Randomly changes your Pokemon's nature.",
+      "badge": "",
+      "sprite_path": "",
+      "emoji": "🌿",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": false
+    },
+    {
+      "key": "rareCandy",
+      "kind": "item",
+      "price": 500000000,
+      "price_text": "500M",
+      "label": "Rare Candy",
+      "description": "Raises your Pokemon's EXP by 100M.",
+      "badge": "",
+      "sprite_path": "/sprites/item-rare-candy.png",
+      "emoji": "🍬",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": false
+    },
+    {
+      "key": "egg",
+      "kind": "egg",
+      "price": 1000000000,
+      "price_text": "1B",
+      "label": "Pokemon Egg",
+      "description": "Send off your current Pokemon and start fresh with a new egg.",
+      "badge": "",
+      "sprite_path": "",
+      "emoji": "🥚",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": false
+    },
+    {
+      "key": "egg:uncommon",
+      "kind": "egg",
+      "price": 2500000000,
+      "price_text": "2.5B",
+      "label": "Uncommon Egg",
+      "description": "Send off your current Pokemon for an egg guaranteed to hatch Uncommon or better.",
+      "badge": "UNCOMMON",
+      "sprite_path": "",
+      "emoji": "🥚",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": false
+    },
+    {
+      "key": "shinyCharm",
+      "kind": "item",
+      "price": 3000000000,
+      "price_text": "3B",
+      "label": "Shiny Charm",
+      "description": "While owned, raises the chance of hatching a shiny.",
+      "badge": "",
+      "sprite_path": "/sprites/item-shiny-charm.png",
+      "emoji": "✨",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": false
+    },
+    {
+      "key": "egg:rare",
+      "kind": "egg",
+      "price": 4000000000,
+      "price_text": "4B",
+      "label": "Rare Egg",
+      "description": "Send off your current Pokemon for an egg guaranteed to hatch Rare or better.",
+      "badge": "RARE",
+      "sprite_path": "",
+      "emoji": "🥚",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": false
+    }
+  ],
+  "bag": [],
+  "dex": [],
+  "catch_log": [],
+  "rarity_counts": {
+    "legendary": 0,
+    "rare": 0,
+    "uncommon": 0,
+    "common": 0
+  },
+  "catch_counts": {
+    "legendary": 0,
+    "rare": 0,
+    "uncommon": 0,
+    "common": 0
+  },
+  "periods": {
+    "week": {
+      "tokens": 907616876,
+      "cost": 645.9425744999988
+    },
+    "month": {
+      "tokens": 2669209109,
+      "cost": 2022.2191918000065
+    }
+  },
+  "strings": {
+    "home": "Home",
+    "shop": "Shop",
+    "bag": "Bag",
+    "collection": "Collection",
+    "pokedex": "Pokédex",
+    "catch_log": "Catch log",
+    "todays_tokens": "Today's tokens",
+    "this_week": "This week",
+    "this_month": "This month",
+    "limits_official": "Limits (official)",
+    "five_hour_session": "5-hour session",
+    "weekly": "Weekly",
+    "resetting_now": "resetting now",
+    "limits_unavailable": "Limits unavailable",
+    "egg": "Egg",
+    "final_form": "Final form",
+    "graduation": "graduation",
+    "next_evolution": "next evolution",
+    "shiny": "Shiny",
+    "raising": "RAISING",
+    "status_idle": "Keeping quiet today.",
+    "status_working": "Today's work is piling up.",
+    "status_focus": "In focus mode now.",
+    "status_sleep": "Sleeping now.",
+    "status_tired": "Careful — the limit is close.",
+    "status_egg": "An egg is warming up.",
+    "status_grew": "It grew!",
+    "spendable_tokens": "Spendable tokens",
+    "spend_hint": "Spend the tokens you've used on items.",
+    "buy": "Buy",
+    "owned": "Owned",
+    "use": "Use",
+    "active": "Active",
+    "bag_empty": "Your bag is empty.",
+    "price": "Price",
+    "not_enough_tokens": "Not enough tokens",
+    "no_pokemon_yet": "No Pokémon caught yet!",
+    "legendary": "Legendary",
+    "rare": "Rare",
+    "uncommon": "Uncommon",
+    "common": "Common",
+    "refresh": "Refresh",
+    "stale_warning": "Data is stale — is poketokend running?",
+    "at_this_rate": "at this rate, full at %1"
+  },
+  "celebration": {},
+  "burn": {},
+  "provider_status": {},
+  "panel": {
+    "tokens_text": "",
+    "cost_text": "",
+    "limit_text": "5h 51% · 7d 36%",
+    "limit_windows": [
+      {
+        "value": 51.0,
+        "text": "51%",
+        "level": "ok"
+      },
+      {
+        "value": 36.0,
+        "text": "36%",
+        "level": "ok"
+      }
+    ],
+    "sprite_path": ""
+  }
+}

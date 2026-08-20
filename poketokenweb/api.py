@@ -163,7 +163,28 @@ def public_state(payload: dict, sprite_dir: Path) -> dict:
         sanitize_error(entry)
         for entry in (raw_errors if isinstance(raw_errors, list) else [])
     ]
+    _redact_account(out)
     return out
+
+
+# Of the account block the engine attaches to limits, only the display name is
+# ever rendered. The rest -- uuid, email, organization -- is the operator's
+# identity, and this app ships with no authentication of its own, so a stranger
+# who exposes it (a LAN, a reverse proxy, a port-forward) would publish their
+# Anthropic account details. Serve only what the UI uses.
+ACCOUNT_PUBLIC_KEYS = ("display_name",)
+
+
+def _redact_account(out: dict) -> None:
+    limits = out.get("limits")
+    if not isinstance(limits, dict):
+        return
+    account = limits.get("account")
+    if not isinstance(account, dict):
+        return
+    limits["account"] = {
+        key: account[key] for key in ACCOUNT_PUBLIC_KEYS if key in account
+    }
 
 
 # --- sprite_file -----------------------------------------------------------

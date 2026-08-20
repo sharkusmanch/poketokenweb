@@ -1,0 +1,424 @@
+{
+  "schema_version": 1,
+  "updated_at": 1787196320.5,
+  "scanning": false,
+  "errors": [
+    "cannot read <path>"
+  ],
+  "today": {
+    "total_tokens": 529546967,
+    "total_cost": 411.18772974999945,
+    "tokens_grouped": "529,546,967",
+    "tokens_compact": "529.5M",
+    "cost_text": "$411.19"
+  },
+  "providers": {
+    "claude_code": {
+      "total_tokens": 529546967,
+      "total_tokens_text": "529,546,967",
+      "total_tokens_compact": "529.5M",
+      "total_cost": 411.18,
+      "input_tokens": 3474,
+      "output_tokens": 2055190,
+      "cache_creation_tokens": 17386277,
+      "cache_read_tokens": 510102026
+    }
+  },
+  "limits": {
+    "session": {
+      "utilization": 97.0,
+      "resets_at": "2026-08-20T04:59:59.595435+00:00",
+      "severity": "normal"
+    },
+    "weekly": {
+      "utilization": 82.5,
+      "resets_at": "2026-08-24T14:59:59.595461+00:00",
+      "severity": "normal"
+    },
+    "plan": "max",
+    "account": {
+      "uuid": "u",
+      "email": "a@b.c",
+      "display_name": "Marcus",
+      "organization": "Org"
+    }
+  },
+  "companion": {
+    "stage": "mon",
+    "label": "",
+    "species_id": 25,
+    "name": "Pikachu",
+    "is_final_form": false,
+    "remaining_tokens": 600000000,
+    "remaining_text": "600M",
+    "goal": "next evolution",
+    "evo_line": [
+      {
+        "species_id": 172,
+        "name": "Pichu",
+        "sprite_path": "/sprites/172-s.png",
+        "current": false,
+        "reached": true
+      },
+      {
+        "species_id": 25,
+        "name": "Pikachu",
+        "sprite_path": "/sprites/25-s.png",
+        "current": true,
+        "reached": true
+      },
+      {
+        "species_id": 26,
+        "name": "Raichu",
+        "sprite_path": "/sprites/26-s.png",
+        "current": false,
+        "reached": false
+      }
+    ],
+    "is_shiny": true,
+    "nature": "Jolly",
+    "rarity": "rare",
+    "stage_index": 1,
+    "total_forms": 3,
+    "used_at_stage": 400000000,
+    "stage_threshold": 1000000000,
+    "stage_progress": 0.4,
+    "sprite_path": "/sprites/25-s-a.png",
+    "dex_count": 2,
+    "spendable_tokens": 9000000000,
+    "spendable_text": "9B",
+    "display_state": "idle",
+    "status_message": "Keeping quiet today."
+  },
+  "shop": [
+    {
+      "key": "mint",
+      "kind": "item",
+      "price": 100000000,
+      "price_text": "100M",
+      "label": "Mint",
+      "description": "Randomly changes your Pokemon's nature.",
+      "badge": "",
+      "sprite_path": "",
+      "emoji": "🌿",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": true
+    },
+    {
+      "key": "rareCandy",
+      "kind": "item",
+      "price": 500000000,
+      "price_text": "500M",
+      "label": "Rare Candy",
+      "description": "Raises your Pokemon's EXP by 100M.",
+      "badge": "",
+      "sprite_path": "/sprites/item-rare-candy.png",
+      "emoji": "🍬",
+      "owned": false,
+      "owned_count": 2,
+      "affordable": true
+    },
+    {
+      "key": "egg",
+      "kind": "egg",
+      "price": 1000000000,
+      "price_text": "1B",
+      "label": "Pokemon Egg",
+      "description": "Send off your current Pokemon and start fresh with a new egg.",
+      "badge": "",
+      "sprite_path": "",
+      "emoji": "🥚",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": true
+    },
+    {
+      "key": "egg:uncommon",
+      "kind": "egg",
+      "price": 2500000000,
+      "price_text": "2.5B",
+      "label": "Uncommon Egg",
+      "description": "Send off your current Pokemon for an egg guaranteed to hatch Uncommon or better.",
+      "badge": "UNCOMMON",
+      "sprite_path": "",
+      "emoji": "🥚",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": true
+    },
+    {
+      "key": "shinyCharm",
+      "kind": "item",
+      "price": 3000000000,
+      "price_text": "3B",
+      "label": "Shiny Charm",
+      "description": "While owned, raises the chance of hatching a shiny.",
+      "badge": "",
+      "sprite_path": "/sprites/item-shiny-charm.png",
+      "emoji": "✨",
+      "owned": true,
+      "owned_count": 1,
+      "affordable": false
+    },
+    {
+      "key": "egg:rare",
+      "kind": "egg",
+      "price": 4000000000,
+      "price_text": "4B",
+      "label": "Rare Egg",
+      "description": "Send off your current Pokemon for an egg guaranteed to hatch Rare or better.",
+      "badge": "RARE",
+      "sprite_path": "",
+      "emoji": "🥚",
+      "owned": false,
+      "owned_count": 0,
+      "affordable": true
+    }
+  ],
+  "bag": [
+    {
+      "key": "rareCandy",
+      "label": "Rare Candy",
+      "description": "Raises your Pokemon's EXP by 100M.",
+      "effect": "+100M XP",
+      "sprite_path": "/sprites/item-rare-candy.png",
+      "emoji": "🍬",
+      "count": 2,
+      "usable": true,
+      "passive": false
+    },
+    {
+      "key": "shinyCharm",
+      "label": "Shiny Charm",
+      "description": "While owned, raises the chance of hatching a shiny.",
+      "effect": "Shiny rate up - active",
+      "sprite_path": "/sprites/item-shiny-charm.png",
+      "emoji": "✨",
+      "count": 1,
+      "usable": false,
+      "passive": true
+    }
+  ],
+  "dex": [
+    {
+      "final_id": 1,
+      "species_id": 1,
+      "name": "Bulbasaur",
+      "rarity": "legendary",
+      "is_shiny": false,
+      "is_raising": false,
+      "sprite_path": "/sprites/1.png"
+    },
+    {
+      "final_id": 2,
+      "species_id": 2,
+      "name": "Ivysaur",
+      "rarity": "legendary",
+      "is_shiny": false,
+      "is_raising": false,
+      "sprite_path": "/sprites/2.png"
+    },
+    {
+      "final_id": 3,
+      "species_id": 3,
+      "name": "Venusaur",
+      "rarity": "legendary",
+      "is_shiny": false,
+      "is_raising": false,
+      "sprite_path": "/sprites/3.png"
+    },
+    {
+      "final_id": 25,
+      "species_id": 25,
+      "name": "Pikachu",
+      "rarity": "rare",
+      "is_shiny": true,
+      "is_raising": true,
+      "sprite_path": "/sprites/25-s.png"
+    },
+    {
+      "final_id": 133,
+      "species_id": 133,
+      "name": "Eevee",
+      "rarity": "uncommon",
+      "is_shiny": false,
+      "is_raising": false,
+      "sprite_path": "/sprites/133.png"
+    },
+    {
+      "final_id": 134,
+      "species_id": 134,
+      "name": "Vaporeon",
+      "rarity": "uncommon",
+      "is_shiny": false,
+      "is_raising": false,
+      "sprite_path": "/sprites/134.png"
+    },
+    {
+      "final_id": 172,
+      "species_id": 172,
+      "name": "Pichu",
+      "rarity": "rare",
+      "is_shiny": true,
+      "is_raising": true,
+      "sprite_path": "/sprites/172-s.png"
+    }
+  ],
+  "catch_log": [
+    {
+      "rarity": "rare",
+      "nature": "Jolly",
+      "is_shiny": true,
+      "chain": [
+        {
+          "species_id": 172,
+          "name": "Pichu",
+          "sprite_path": "/sprites/172-s.png"
+        },
+        {
+          "species_id": 25,
+          "name": "Pikachu",
+          "sprite_path": "/sprites/25-s.png"
+        }
+      ],
+      "caught_at": 1787100000.0,
+      "raised_text": "",
+      "raising": true
+    },
+    {
+      "rarity": "uncommon",
+      "nature": "Calm",
+      "is_shiny": false,
+      "chain": [
+        {
+          "species_id": 133,
+          "name": "Eevee",
+          "sprite_path": "/sprites/133.png"
+        },
+        {
+          "species_id": 134,
+          "name": "Vaporeon",
+          "sprite_path": "/sprites/134.png"
+        }
+      ],
+      "caught_at": 1786000000.0,
+      "raised_text": "1 days, 2 hr",
+      "raising": false
+    },
+    {
+      "rarity": "legendary",
+      "nature": null,
+      "is_shiny": false,
+      "chain": [
+        {
+          "species_id": 1,
+          "name": "Bulbasaur",
+          "sprite_path": "/sprites/1.png"
+        },
+        {
+          "species_id": 2,
+          "name": "Ivysaur",
+          "sprite_path": "/sprites/2.png"
+        },
+        {
+          "species_id": 3,
+          "name": "Venusaur",
+          "sprite_path": "/sprites/3.png"
+        }
+      ],
+      "caught_at": null,
+      "raised_text": "",
+      "raising": false
+    }
+  ],
+  "rarity_counts": {
+    "legendary": 3,
+    "rare": 2,
+    "uncommon": 2,
+    "common": 0
+  },
+  "catch_counts": {
+    "legendary": 1,
+    "rare": 1,
+    "uncommon": 1,
+    "common": 0
+  },
+  "periods": {
+    "week": {
+      "tokens": 907616876,
+      "cost": 645.94
+    },
+    "month": {
+      "tokens": 2669209109,
+      "cost": 2022.21
+    }
+  },
+  "strings": {
+    "home": "Home",
+    "shop": "Shop",
+    "bag": "Bag",
+    "collection": "Collection",
+    "pokedex": "Pokédex",
+    "catch_log": "Catch log",
+    "todays_tokens": "Today's tokens",
+    "this_week": "This week",
+    "this_month": "This month",
+    "limits_official": "Limits (official)",
+    "five_hour_session": "5-hour session",
+    "weekly": "Weekly",
+    "resetting_now": "resetting now",
+    "limits_unavailable": "Limits unavailable",
+    "egg": "Egg",
+    "final_form": "Final form",
+    "graduation": "graduation",
+    "next_evolution": "next evolution",
+    "shiny": "Shiny",
+    "raising": "RAISING",
+    "status_idle": "Keeping quiet today.",
+    "status_working": "Today's work is piling up.",
+    "status_focus": "In focus mode now.",
+    "status_sleep": "Sleeping now.",
+    "status_tired": "Careful — the limit is close.",
+    "status_egg": "An egg is warming up.",
+    "status_grew": "It grew!",
+    "spendable_tokens": "Spendable tokens",
+    "spend_hint": "Spend the tokens you've used on items.",
+    "buy": "Buy",
+    "owned": "Owned",
+    "use": "Use",
+    "active": "Active",
+    "bag_empty": "Your bag is empty.",
+    "price": "Price",
+    "not_enough_tokens": "Not enough tokens",
+    "no_pokemon_yet": "No Pokémon caught yet!",
+    "legendary": "Legendary",
+    "rare": "Rare",
+    "uncommon": "Uncommon",
+    "common": "Common",
+    "refresh": "Refresh",
+    "stale_warning": "Data is stale — is poketokend running?",
+    "at_this_rate": "at this rate, full at %1"
+  },
+  "celebration": {},
+  "burn": {
+    "session": {
+      "rate_per_minute": 0.42,
+      "minutes_to_full": 117,
+      "eta_text": "18:42"
+    },
+    "weekly": {
+      "rate_per_minute": 0.01,
+      "minutes_to_full": null,
+      "eta_text": ""
+    }
+  },
+  "provider_status": {},
+  "panel": {
+    "tokens_text": "",
+    "cost_text": "",
+    "limit_text": "",
+    "limit_windows": [],
+    "sprite_path": "/sprites/25-s-a.png"
+  }
+}
