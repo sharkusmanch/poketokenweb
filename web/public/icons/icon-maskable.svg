@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="PokeToken">
+  <title>PokeToken</title>
+  <defs>
+    <clipPath id="ballm">
+      <circle cx="256" cy="256" r="160"/>
+    </clipPath>
+  </defs>
+  <rect width="512" height="512" fill="#0d1117"/>
+  <g clip-path="url(#ballm)">
+    <rect x="96" y="96" width="320" height="160" fill="#e3350d"/>
+    <rect x="96" y="256" width="320" height="160" fill="#f0f6fc"/>
+    <rect x="96" y="235" width="320" height="42" fill="#0d1117"/>
+  </g>
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#0d1117" stroke-width="15"/>
+  <circle cx="256" cy="256" r="61" fill="#0d1117"/>
+  <circle cx="256" cy="256" r="43" fill="#f0f6fc"/>
+</svg>
