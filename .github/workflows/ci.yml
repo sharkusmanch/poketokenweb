@@ -1,0 +1,53 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      # apprise is a real runtime dependency; without it every test that imports
+      # poketokenweb.notify (directly or via runner/__main__) fails to collect.
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q
+      - name: Engine drift vs the upstream port
+        continue-on-error: true
+        run: |
+          git remote add port https://github.com/rubensanchezrivero/poketokenbar-plasma || true
+          git fetch --quiet port main
+          echo '### Engine drift vs rubensanchezrivero/poketokenbar-plasma' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          git diff --stat port/main -- poketokenbar/ >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  web:
+    runs-on: ubuntu-latest
+    # The frontend does not exist until the SPA lands; skip cleanly until then
+    # rather than reporting a red job with no signal.
+    if: hashFiles('web/package-lock.json') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx tsc -b
+        working-directory: web
+      - run: npx vitest run
+        working-directory: web
+      - run: npm run build
+        working-directory: web

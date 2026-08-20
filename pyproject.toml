@@ -1,7 +1,9 @@
 [project]
-name = "poketokenbar"
+name = "poketokenweb"
 version = "0.1.0"
+description = "Self-hosted web companion and usage tracker for Claude Code and Codex tokens"
 requires-python = ">=3.12"
+dependencies = ["apprise==1.12.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
