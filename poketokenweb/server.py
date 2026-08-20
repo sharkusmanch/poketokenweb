@@ -92,15 +92,27 @@ def _is_content_hashed(filename: str) -> bool:
     false positive pins a stale bundle in browser caches for a year.
     """
     stem = filename.rsplit(".", 1)[0] if "." in filename else filename
-    for token in re.split(r"[.\-_]", stem):
-        if (
-            len(token) >= 8
-            and token.isalnum()
-            and any(c.isdigit() for c in token)
-            and any(c.isalpha() for c in token)
-        ):
+    tokens = re.split(r"[.\-_]", stem)
+    # The first token is the entry name (``index``), never the hash; requiring a
+    # separator also means a bare ``bundle.js`` is not mistaken for hashed.
+    for token in tokens[1:]:
+        if len(token) >= 8 and token.isalnum() and _looks_random(token):
             return True
     return False
+
+
+def _looks_random(token: str) -> bool:
+    """Heuristic for a build hash rather than a word.
+
+    Vite emits base64url-ish hashes that frequently contain NO digit at all
+    (observed: ``index-DmWNSQuv.css``), so an ``any(isdigit)`` test rejects a
+    real hashed asset and pins it to no-cache. Mixed case or a digit is enough
+    signal here, because only files directly under assets/ — a directory the
+    bundler owns entirely — are ever eligible.
+    """
+    has_digit = any(c.isdigit() for c in token)
+    mixed_case = any(c.islower() for c in token) and any(c.isupper() for c in token)
+    return has_digit or mixed_case
 
 
 def _has_extension(relative: str) -> bool:
@@ -152,7 +164,11 @@ class _Handler(BaseHTTPRequestHandler):
         for key, value in extra:
             self.send_header(key, value)
         self.end_headers()
-        self.wfile.write(body)
+        # HEAD must carry identical headers (including Content-Length) but no
+        # body. Writing one would desynchronise a keep-alive connection just as
+        # surely as an undrained request body does.
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _json(self, status: int, payload, cache: str = NO_STORE) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -223,6 +239,15 @@ class _Handler(BaseHTTPRequestHandler):
         del _body, error
 
     # --- POST -------------------------------------------------------------
+
+    def do_HEAD(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler protocol
+        """Route exactly as GET; _respond suppresses the body.
+
+        Without this BaseHTTPRequestHandler answers 501, which breaks uptime
+        checkers, some reverse-proxy probes, and any client that HEADs a static
+        asset before fetching it.
+        """
+        self.do_GET()
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler protocol
         try:

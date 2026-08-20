@@ -685,3 +685,109 @@ def test_config_is_never_cached(serve):
     port = serve()
     _status, headers, _body = get_json(port, "/api/config")
     assert "no-store" in headers.get("Cache-Control", "")
+
+
+# --- HEAD ------------------------------------------------------------------
+# BaseHTTPRequestHandler answers 501 unless do_HEAD exists, which breaks uptime
+# checkers and proxy probes. Found by curl -I against a real build, not by any
+# unit test.
+
+def test_head_on_the_spa_shell_matches_get_headers_without_a_body(serve, paths):
+    port = serve()
+    (paths.web_root / "index.html").write_text("<!doctype html><title>x</title>")
+    get_status, get_headers, get_body = request(port, "GET", "/")
+    head_status, head_headers, head_body = request(port, "HEAD", "/")
+    assert head_status == get_status == 200
+    assert head_body == b""
+    # Content-Length must still describe the entity that GET would return.
+    assert head_headers["Content-Length"] == get_headers["Content-Length"]
+    assert head_headers["Content-Type"] == get_headers["Content-Type"]
+
+
+def test_head_on_healthz(serve):
+    port = serve()
+    status, headers, body = request(port, "HEAD", "/healthz")
+    assert status == 200
+    assert body == b""
+    assert int(headers["Content-Length"]) > 0
+
+
+def test_head_sends_no_body_on_the_wire(serve, paths):
+    """Read the raw socket: http.client discards HEAD bodies by protocol.
+
+    An assertion on `response.read()` therefore passes even when the server
+    really does write a body, because the client never reads it. Only the raw
+    bytes reveal the desynchronisation that body would cause.
+    """
+    import socket as _socket
+
+    port = serve()
+    (paths.web_root / "index.html").write_text("<!doctype html><title>x</title>")
+    sock = _socket.create_connection(("127.0.0.1", port), timeout=5)
+    try:
+        sock.sendall(b"HEAD / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        raw = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            raw += chunk
+    finally:
+        sock.close()
+
+    head, _, body = raw.partition(b"\r\n\r\n")
+    assert b"200" in head.split(b"\r\n")[0]
+    assert b"Content-Length:" in head
+    assert body == b"", f"HEAD wrote {len(body)} bytes of body: {body[:80]!r}"
+
+
+def test_head_does_not_desync_a_keepalive_connection(serve, paths):
+    """A body written for HEAD is parsed as the next request."""
+    port = serve()
+    (paths.web_root / "index.html").write_text("<!doctype html><title>x</title>")
+    conn = connect(port)
+    try:
+        conn.request("HEAD", "/")
+        first = conn.getresponse()
+        first.read()
+        assert first.status == 200
+        conn.request("GET", "/healthz")
+        second = conn.getresponse()
+        payload = json.loads(second.read())
+        assert second.status == 200 and payload["ok"] is True
+    finally:
+        conn.close()
+
+
+# --- content-hash detection ------------------------------------------------
+# Vite hashes are base64url-ish and often contain no digit whatsoever, so an
+# any(isdigit) test rejects a real hashed bundle and serves it no-cache forever.
+
+@pytest.mark.parametrize("name", [
+    "index-BL0uELsO.js",     # observed in a real build
+    "index-DmWNSQuv.css",    # observed; contains NO digit
+    "index-4f3a9b2c.js",
+    "chunk-a1b2c3d4.js",
+])
+def test_real_build_asset_names_are_recognised_as_hashed(name):
+    assert server._is_content_hashed(name) is True
+
+
+@pytest.mark.parametrize("name", [
+    "index.html",
+    "manifest.webmanifest",
+    "favicon.png",
+    "bundle.js",             # no separator: not a hashed name
+    "vendor-lodash.js",      # a word, not a hash
+])
+def test_unhashed_names_are_not_immutable(name):
+    assert server._is_content_hashed(name) is False
+
+
+def test_a_hashed_css_asset_is_served_immutable(serve, paths):
+    port = serve()
+    assets = paths.web_root / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    (assets / "index-DmWNSQuv.css").write_text("body{}")
+    _status, headers, _body = request(port, "GET", "/assets/index-DmWNSQuv.css")
+    assert "immutable" in headers["Cache-Control"]
