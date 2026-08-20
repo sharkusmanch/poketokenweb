@@ -109,18 +109,50 @@ def run_once(
 ) -> dict | None:
     """Poll once, publish what came back, and always beat. Never raises."""
     payload: dict | None = None
+    succeeded = False
     try:
         payload = daemon.poll_once()
+        succeeded = True
         for error in payload.get("errors") or []:
             log(f"poll error: {error}")
         _announce(paths, notifier, payload.get("celebration"), now)
     except Exception as exc:  # the thread must survive any poll
         log(f"poll failed: {type(exc).__name__}: {exc}")
     finally:
-        # Unconditional: a heartbeat skipped on failure reads as boot grace and
-        # keeps /healthz green while every poll fails.
-        heartbeat.write(paths.heartbeat_file, now)
+        # Always beat, so "never started" stays distinguishable from "running
+        # but failing" -- but only a poll that actually returned refreshes the
+        # success stamp. Health is judged on the success stamp: a daemon whose
+        # every poll raises publishes nothing, and reporting it healthy left
+        # /api/state answering 503 forever with no probe noticing.
+        heartbeat.write(paths.heartbeat_file, now, succeeded=succeeded)
     return payload
+
+
+# How often the sleep wakes to look for queued UI commands. The engine's own
+# Daemon.run uses the same trick for the same reason: a flat wait(interval)
+# makes a Buy tap sit unapplied for up to the whole refresh interval -- 120s by
+# default, an hour at the maximum -- while the UI re-reads the pre-command state
+# and the user taps again.
+COMMAND_POLL_SECONDS = 2.0
+
+
+def _has_queued_commands(paths: Paths) -> bool:
+    try:
+        return any(paths.spool_dir.glob("*.json"))
+    except OSError:
+        return False
+
+
+def _sleep_until_due(paths: Paths, stop: threading.Event, interval: float) -> None:
+    """Wait out the refresh interval, but wake early for a queued command."""
+    waited = 0.0
+    while waited < interval:
+        slice_seconds = min(COMMAND_POLL_SECONDS, interval - waited)
+        if stop.wait(slice_seconds):
+            return
+        waited += slice_seconds
+        if _has_queued_commands(paths):
+            return
 
 
 def run_loop(
@@ -153,7 +185,7 @@ def run_loop(
             interval = heartbeat.clamp_interval(
                 daemon.config_values.get("refresh_interval")
             )
-            stop.wait(interval)
+            _sleep_until_due(paths, stop, interval)
     finally:
         # Same thread that opened it, as sqlite3 requires.
         cache.close()

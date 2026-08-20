@@ -48,7 +48,10 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
+import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -129,6 +132,72 @@ def _message(exc: BaseException) -> str:
     """
     text = str(exc.args[0]) if exc.args else exc.__class__.__name__
     return api.sanitize_error(text)
+
+
+# ThreadingHTTPServer runs one thread per request, so two settings changes can
+# overlap -- routinely, because the Settings screen commits a number field on
+# blur and clicking the language select blurs it. The engine's config.set_value
+# is an unsynchronised read-modify-write AND writes through a fixed temp name,
+# so two writers open the same temp file, write different-length payloads at
+# independent offsets, and race to rename a torn result into place. config.load
+# then swallows the parse error and silently returns DEFAULTS -- every setting
+# the user ever changed, gone. Measured before this guard: 80 rounds of two
+# concurrent writes produced 22 corrupt files and 57 lost updates.
+#
+# The daemon only ever READS config, so a process-local lock is sufficient.
+def _log_server_error(method: str, path: str, exc: BaseException) -> None:
+    """One line per 500. Never the traceback -- it names server paths."""
+    route = urlparse(path).path
+    print(
+        f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')} {method} {route} -> 500: "
+        f"{type(exc).__name__}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+_CONFIG_WRITE_LOCK = threading.Lock()
+
+# The daemon drains the spool once per refresh interval (up to an hour), so
+# without a ceiling any client that can reach the port fills the disk: measured
+# ~300 accepted commands/second from one host, which is ~26M files a day. The
+# engine's drain() also globs and reads the whole directory into one list.
+MAX_PENDING_COMMANDS = 256
+
+
+class _SpoolFull(Exception):
+    """Raised when the command queue is saturated; surfaced as 429."""
+
+
+def _enqueue_bounded(spool: Path, name: str, args: dict) -> None:
+    try:
+        pending = sum(1 for _ in spool.glob("*.json"))
+    except OSError:
+        pending = 0
+    if pending >= MAX_PENDING_COMMANDS:
+        raise _SpoolFull(f"{pending} commands already queued")
+    commands.enqueue(name, args, spool=spool)
+
+
+def _write_setting(config_file: Path, key: str, value: str) -> None:
+    """Serialised read-modify-write with a unique temp name."""
+    with _CONFIG_WRITE_LOCK:
+        settings = dict(config.load(config_file))
+        # config._coerce is private, but it is the engine's own string->type
+        # rule and this module is vendored at a pinned commit. Duplicating the
+        # rule here would let the two drift silently; a test asserts our result
+        # matches config.set_value's for every settable key.
+        settings[key] = config._coerce(key, value)
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = config_file.with_name(f"{config_file.name}.{os.getpid()}.{time.time_ns()}.tmp")
+        try:
+            tmp.write_text(
+                json.dumps(settings, indent=2, sort_keys=True), encoding="utf-8"
+            )
+            tmp.replace(config_file)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -271,17 +340,32 @@ class _Handler(BaseHTTPRequestHandler):
             except (ValueError, UnicodeDecodeError):
                 self._json(400, {"error": "body must be JSON"})
                 return
+            except RecursionError:
+                # Deeply nested JSON is under the size cap and blows the stack
+                # inside the decoder itself. Bad input, not a server fault.
+                self._json(400, {"error": "body is nested too deeply"})
+                return
 
             try:
                 result = handler(payload)
+            except _SpoolFull as exc:
+                self._json(429, {"error": f"too many queued commands: {exc}"})
+                return
             except (api.ValidationError, ValueError, KeyError) as exc:
                 self._json(400, {"error": _message(exc)})
                 return
+            except RecursionError:
+                # Deeply nested JSON parses fine and then blows the stack in our
+                # own validation. It is bad input, not a server fault.
+                self._json(400, {"error": "body is nested too deeply"})
+                return
             self._json(202, result)
-        except Exception:
-            # Defect 2: anything at all — an OSError writing the spool, a full
-            # disk — must become a 500 with a generic body, never a dropped
-            # connection plus a traceback naming server paths.
+        except Exception as exc:
+            # Anything at all — an OSError writing the spool, a full disk — must
+            # become a 500 with a generic body, never a dropped connection plus
+            # a traceback naming server paths. Log the type: an unlogged 500
+            # leaves no trace in the container's only log sink.
+            _log_server_error("POST", self.path, exc)
             try:
                 self._json(500, {"error": "internal error"})
             except Exception:  # pragma: no cover - socket already gone
@@ -289,15 +373,15 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _post_command(self, payload) -> dict:
         name, args = api.validate_command(payload)
-        commands.enqueue(name, args, spool=self._paths.spool_dir)
+        _enqueue_bounded(self._paths.spool_dir, name, args)
         return {"status": "accepted", "name": name, "args": args}
 
     def _post_config(self, payload) -> dict:
         key, value = api.validate_config(payload)
-        config.set_value(self._paths.config_file, key, value)
+        _write_setting(self._paths.config_file, key, value)
         # The daemon holds the live settings in memory; the file alone would not
         # take effect until a restart.
-        commands.enqueue("reload_config", {}, spool=self._paths.spool_dir)
+        _enqueue_bounded(self._paths.spool_dir, "reload_config", {})
         return {"status": "accepted", "key": key, "value": value}
 
     # --- GET --------------------------------------------------------------
@@ -317,7 +401,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._sprite(route)
             else:
                 self._static(route)
-        except Exception:
+        except Exception as exc:
+            _log_server_error("GET", self.path, exc)
             try:
                 self._json(500, {"error": "internal error"})
             except Exception:  # pragma: no cover - socket already gone
@@ -328,21 +413,27 @@ class _Handler(BaseHTTPRequestHandler):
 
         The web thread being able to answer proves nothing about the daemon
         thread that actually refreshes usage — an earlier design that returned
-        200 whenever the socket accepted left dead daemons running forever. The
-        decision is heartbeat.healthy(), which also bounds the
-        never-had-a-heartbeat case with the boot deadline.
+        200 whenever the socket accepted left dead daemons running forever.
+
+        Nor is a heartbeat alone enough: a daemon whose every poll RAISES keeps
+        beating while publishing nothing, and judged on the beat it stayed green
+        indefinitely while /api/state answered 503. The decision is therefore
+        the age of the last SUCCESSFUL publish, with the beat retained only to
+        tell "never started" apart from "running but failing".
         """
         settings = config.load(self._paths.config_file)
         interval = heartbeat.clamp_interval(settings.get("refresh_interval"))
         now = time.time()
         beat_age = heartbeat.age(self._paths.heartbeat_file, now)
+        publish_age = heartbeat.success_age(self._paths.heartbeat_file, now)
         boot_age = now - self.server.boot_time  # type: ignore[attr-defined]
-        ok = heartbeat.healthy(beat_age, interval, boot_age)
+        ok = heartbeat.healthy(beat_age, interval, boot_age, publish_age)
         self._json(
             200 if ok else 503,
             {
                 "ok": ok,
                 "heartbeat_age": beat_age,
+                "publish_age": publish_age,
                 "interval": interval,
                 "boot_age": boot_age,
             },

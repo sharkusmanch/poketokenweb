@@ -52,7 +52,18 @@ from . import notify, paths as paths_module, runner, server  # noqa: E402
 
 def main() -> int:
     paths = paths_module.resolve()
-    paths.ensure()
+    try:
+        paths.ensure()
+    except OSError as exc:
+        # The documented PUID/PGID path lands here when the data volume is owned
+        # by someone else. A bare traceback in a restart loop tells the operator
+        # nothing actionable.
+        runner.log(
+            f"cannot write POKETOKENWEB_DATA_DIR={paths.state_file.parent.parent} "
+            f"as uid {os.getuid()}: {exc}. Chown the volume to that uid, or set "
+            f"PUID/PGID to the owner of your log files."
+        )
+        return 1
 
     # run_loop logs the notifier's enabled/invalid state; do not duplicate it
     # here. Reporting .invalid matters because a typo'd URI is otherwise
@@ -69,8 +80,10 @@ def main() -> int:
 
     httpd = server.build_server(
         paths,
-        host=os.environ.get("POKETOKENWEB_HOST", "0.0.0.0"),
-        port=int(os.environ.get("PORT", "8080")),
+        host=os.environ.get("POKETOKENWEB_HOST") or "0.0.0.0",
+        # `or` not a default: Kubernetes renders an unset env var as an empty
+        # string, which int("") rejects with a traceback at startup.
+        port=int(os.environ.get("PORT") or "8080"),
     )
     web_thread = threading.Thread(
         target=httpd.serve_forever, name="web", daemon=True

@@ -61,7 +61,12 @@ RUN addgroup -g 1000 appgroup && \
 # with no such directory the volume is created root:root — the app then cannot
 # create its save/cache subdirectories and the very first `docker compose up`
 # fails for every consumer.
-RUN mkdir -p /data && chown 1000:1000 /data
+# 0777 rather than chown 1000: the compose file and README document PUID/PGID
+# for users whose logs are owned by someone else, and Docker seeds a named
+# volume's ownership from this directory -- so a 1000-owned mountpoint made
+# every documented PUID != 1000 crash with an unhandled PermissionError and a
+# restart loop. This is a mount point, not a code path.
+RUN mkdir -p /data && chmod 0777 /data
 VOLUME /data
 
 COPY --from=py-builder /install /usr/local
@@ -70,7 +75,11 @@ COPY poketokenbar /app/poketokenbar
 COPY poketokenweb /app/poketokenweb
 COPY --from=web-builder /build/web/dist /app/web
 
-ENV PYTHONUNBUFFERED=1 \
+# HOME is where the engine looks for .claude, .claude.json and .codex. Without
+# it a plain `docker run` inherits HOME=/root, finds no logs, and reports zero
+# tokens with no error -- the compose file set it, so nothing else caught this.
+ENV HOME=/config \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     POKETOKENWEB_DATA_DIR=/data \
     POKETOKENWEB_WEB_ROOT=/app/web \

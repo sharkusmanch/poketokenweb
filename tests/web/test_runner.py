@@ -476,9 +476,17 @@ def test_interval_clamping_is_delegated_to_heartbeat(tmp_path, raw, expected):
     daemon = FakeDaemon({"errors": []}, refresh_interval=raw)
     stop = RecordingStop()
 
-    runner.run_loop(paths, None, stop, build=lambda _p: (daemon, FakeCache()))
+    # The sleep is sliced so a queued UI command can cut it short, so capture
+    # the interval handed to the sleeper rather than the shape of the waits.
+    seen: list[float] = []
+    original = runner._sleep_until_due
+    runner._sleep_until_due = lambda p, st, iv: (seen.append(iv), st.set())[0]
+    try:
+        runner.run_loop(paths, None, stop, build=lambda _p: (daemon, FakeCache()))
+    finally:
+        runner._sleep_until_due = original
 
-    assert stop.waits == [heartbeat.clamp_interval(raw)] == [expected]
+    assert seen == [heartbeat.clamp_interval(raw)] == [expected]
 
 
 def test_loop_does_not_poll_when_stop_is_already_set(tmp_path):
@@ -579,3 +587,97 @@ def test_loop_reports_rejected_apprise_uris(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "definitely-not-a-uri" in err
     assert "disabled" in err
+
+
+class NeverSetStop(threading.Event):
+    """Records slice durations and never fires, so the sleeper runs to term."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.waits: list[float] = []
+
+    def wait(self, timeout=None):  # type: ignore[override]
+        self.waits.append(timeout)
+        return False
+
+
+def test_a_queued_command_cuts_the_sleep_short(tmp_path):
+    """A Buy tap must not wait out the whole refresh interval.
+
+    A flat wait(interval) left a purchase unapplied for up to 120s by default
+    (an hour at the maximum), while the UI re-read the pre-command state and the
+    user tapped again. The engine's own Daemon.run slices for this reason.
+    """
+    paths = make_paths(tmp_path)
+    paths.spool_dir.mkdir(parents=True, exist_ok=True)
+    (paths.spool_dir / "0001.json").write_text('{"name": "refresh", "args": {}}')
+    stop = NeverSetStop()
+
+    runner._sleep_until_due(paths, stop, 3600)
+
+    assert sum(stop.waits) <= runner.COMMAND_POLL_SECONDS, (
+        f"slept {sum(stop.waits)}s with a command queued; the interval was 3600"
+    )
+
+
+def test_an_empty_spool_sleeps_the_whole_interval(tmp_path):
+    paths = make_paths(tmp_path)
+    paths.spool_dir.mkdir(parents=True, exist_ok=True)
+    stop = NeverSetStop()
+
+    runner._sleep_until_due(paths, stop, 30)
+
+    assert sum(stop.waits) == 30
+    assert max(stop.waits) <= runner.COMMAND_POLL_SECONDS
+
+
+def test_a_set_stop_ends_the_sleep_immediately(tmp_path):
+    paths = make_paths(tmp_path)
+    paths.spool_dir.mkdir(parents=True, exist_ok=True)
+    stop = threading.Event()
+    stop.set()
+
+    started = time.monotonic()
+    runner._sleep_until_due(paths, stop, 3600)
+
+    assert time.monotonic() - started < 1.0
+
+
+def test_a_failing_poll_does_not_refresh_the_success_stamp(tmp_path):
+    """The defect this exists for: /healthz green while nothing is published.
+
+    A poll that raises still beats -- that keeps 'never started' distinct from
+    'running but failing' -- but it must not look like a successful publish.
+    """
+    paths = make_paths(tmp_path)
+
+    class Exploding(FakeDaemon):
+        def poll_once(self):
+            self.polls += 1
+            raise RuntimeError("scan blew up")
+
+    runner.run_once(paths, None, Exploding({"errors": []}), now=1000.0)
+
+    assert heartbeat.age(paths.heartbeat_file, now=1000.0) == 0.0
+    assert heartbeat.success_age(paths.heartbeat_file, now=1000.0) is None
+
+
+def test_a_successful_poll_records_the_publish(tmp_path):
+    paths = make_paths(tmp_path)
+    runner.run_once(paths, None, FakeDaemon({"errors": []}), now=1000.0)
+    assert heartbeat.success_age(paths.heartbeat_file, now=1000.0) == 0.0
+
+
+def test_a_later_failure_carries_the_earlier_success_forward(tmp_path):
+    paths = make_paths(tmp_path)
+
+    class Exploding(FakeDaemon):
+        def poll_once(self):
+            raise RuntimeError("boom")
+
+    runner.run_once(paths, None, FakeDaemon({"errors": []}), now=1000.0)
+    runner.run_once(paths, None, Exploding({"errors": []}), now=1100.0)
+
+    # Still beating, but the app has published nothing for 100s.
+    assert heartbeat.age(paths.heartbeat_file, now=1100.0) == 0.0
+    assert heartbeat.success_age(paths.heartbeat_file, now=1100.0) == 100.0

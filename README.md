@@ -50,6 +50,7 @@ Everything is an environment variable; nothing is compiled in.
 | `HOME` | `/config` | Where the app looks for `.claude/`, `.codex/` and `.claude.json`. |
 | `APPRISE_URLS` | *(unset)* | Comma-separated notification URIs. Unset disables notifications. |
 | `PORT` | `8080` | HTTP listen port. |
+| `POKETOKENWEB_HOST` | `0.0.0.0` | Listen address. This app has **no authentication**; the compose file publishes it on loopback only. |
 | `POKETOKENWEB_DATA_DIR` | `/data` | Save, settings, sprite cache, scan cache. |
 | `POKETOKENWEB_WEB_ROOT` | `/app/web` | Built frontend assets. |
 | `POKETOKENWEB_SPOOL_DIR` | `/tmp/poketokenbar/commands` | UI → daemon command queue. |

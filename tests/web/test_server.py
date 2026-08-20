@@ -151,13 +151,17 @@ def test_healthz_503_once_boot_grace_expired_without_heartbeat(serve):
     assert payload["heartbeat_age"] is None
 
 
-def test_healthz_200_with_fresh_heartbeat_long_after_boot(serve, paths):
-    heartbeat.write(paths.heartbeat_file)
+def test_healthz_200_with_a_fresh_successful_publish_long_after_boot(serve, paths):
+    # `succeeded=True` is the point: an earlier version of this test wrote a
+    # bare beat and asserted 200, which codified the defect that a daemon
+    # failing every poll stayed green forever.
+    heartbeat.write(paths.heartbeat_file, succeeded=True)
     port = serve(boot_time=time.time() - 86400)
     status, _headers, payload = get_json(port, "/healthz")
     assert status == 200
     assert payload["ok"] is True
     assert payload["heartbeat_age"] < 60
+    assert payload["publish_age"] < 60
 
 
 def test_healthz_503_with_stale_heartbeat(serve, paths):
@@ -441,7 +445,9 @@ def test_config_write_failure_returns_500_json(serve, monkeypatch):
     def boom(*_args, **_kwargs):
         raise PermissionError(13, "Permission denied", "/data/config/config.json")
 
-    monkeypatch.setattr(server.config, "set_value", boom)
+    # Config writes no longer go through the engine's set_value: it is an
+    # unsynchronised read-modify-write through a fixed temp name.
+    monkeypatch.setattr(server, "_write_setting", boom)
     port = serve()
     status, payload = post_json(
         port, "/api/config", {"key": "language", "value": "ko"}
@@ -791,3 +797,186 @@ def test_a_hashed_css_asset_is_served_immutable(serve, paths):
     (assets / "index-DmWNSQuv.css").write_text("body{}")
     _status, headers, _body = request(port, "GET", "/assets/index-DmWNSQuv.css")
     assert "immutable" in headers["Cache-Control"]
+
+
+# --- concurrent settings writes --------------------------------------------
+# ThreadingHTTPServer runs a thread per request, and the Settings screen commits
+# a number field on blur -- so clicking the language select fires two POSTs at
+# once. The engine's config.set_value is an unsynchronised read-modify-write
+# through a FIXED temp name. Measured before the fix: 80 rounds of two
+# concurrent writes gave 22 corrupt files and 57 lost updates, and a corrupt
+# file reads back as DEFAULTS, silently discarding every setting.
+
+def test_our_writer_matches_the_engines_coercion_for_every_settable_key(tmp_path):
+    from poketokenbar import config as engine_config
+    from poketokenweb.server import _write_setting
+
+    samples = {
+        "refresh_interval": "300",
+        "warn_threshold": "70",
+        "crit_threshold": "90",
+        "limit_display_mode": "weekly",
+        "language": "ja",
+    }
+    for key, value in samples.items():
+        ours = tmp_path / f"ours-{key}.json"
+        theirs = tmp_path / f"theirs-{key}.json"
+        _write_setting(ours, key, value)
+        engine_config.set_value(theirs, key, value)
+        assert json.loads(ours.read_text())[key] == json.loads(theirs.read_text())[key]
+        assert type(json.loads(ours.read_text())[key]) is type(
+            json.loads(theirs.read_text())[key]
+        )
+
+
+def test_concurrent_setting_writes_never_corrupt_or_lose(serve):
+    port = serve()
+    changes = [
+        ("language", "ko"),
+        ("refresh_interval", 3600),
+        ("limit_display_mode", "weekly"),
+        ("warn_threshold", 70),
+    ]
+    errors: list = []
+
+    def push(pair):
+        key, value = pair
+        try:
+            status, _body = post_json(port, "/api/config", {"key": key, "value": value})
+            if status != 202:
+                errors.append((key, status))
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    for _round in range(15):
+        threads = [threading.Thread(target=push, args=(c,)) for c in changes]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert not errors, errors
+    # Every change must be present: a lost update or a torn file that reads back
+    # as DEFAULTS would drop one.
+    _status, _headers, seen = get_json(port, "/api/config")
+    assert seen["language"] == "ko"
+    assert seen["refresh_interval"] == 3600
+    assert seen["limit_display_mode"] == "weekly"
+    assert seen["warn_threshold"] == 70
+
+
+def test_no_temp_files_are_left_behind_by_concurrent_writes(serve, paths):
+    port = serve()
+    threads = [
+        threading.Thread(
+            target=post_json,
+            args=(port, "/api/config", {"key": "warn_threshold", "value": v}),
+        )
+        for v in (60, 65, 70, 75)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert list(paths.config_file.parent.glob("*.tmp")) == []
+
+
+# --- /healthz reports publishing, not merely beating ------------------------
+
+def test_healthz_503_when_the_daemon_beats_but_never_publishes(serve, paths):
+    """The regression: every poll raising kept the probe green forever."""
+    import json as _json
+
+    port = serve(boot_time=time.time() - (heartbeat.BOOT_GRACE_SECONDS + 60))
+    # Beating right now, but no successful publish has ever been recorded.
+    paths.heartbeat_file.parent.mkdir(parents=True, exist_ok=True)
+    paths.heartbeat_file.write_text(_json.dumps({"beat": time.time(), "ok_at": None}))
+
+    status, _headers, body = get_json(port, "/healthz")
+    assert status == 503, body
+    assert body["ok"] is False
+    assert body["publish_age"] is None
+
+
+def test_healthz_503_when_publishing_stopped_though_polls_continue(serve, paths):
+    import json as _json
+
+    port = serve(boot_time=time.time() - 10_000)
+    now = time.time()
+    paths.heartbeat_file.parent.mkdir(parents=True, exist_ok=True)
+    paths.heartbeat_file.write_text(
+        _json.dumps({"beat": now, "ok_at": now - (heartbeat.stale_after(120) + 60)})
+    )
+
+    status, _headers, body = get_json(port, "/healthz")
+    assert status == 503, body
+
+
+def test_healthz_200_with_a_recent_publish(serve, paths):
+    import json as _json
+
+    port = serve(boot_time=time.time() - 10_000)
+    now = time.time()
+    paths.heartbeat_file.parent.mkdir(parents=True, exist_ok=True)
+    paths.heartbeat_file.write_text(_json.dumps({"beat": now, "ok_at": now - 5}))
+
+    status, _headers, body = get_json(port, "/healthz")
+    assert status == 200, body
+    assert body["publish_age"] < 60
+
+
+# --- spool bounding, error logging, nested JSON -----------------------------
+# The daemon drains once per refresh interval (up to an hour), so an unbounded
+# queue lets any client that can reach the port fill the disk: ~300 accepted
+# commands/second was measured from a single host.
+
+def test_a_saturated_spool_is_429_not_unbounded_growth(serve, paths):
+    port = serve()
+    accepted = 0
+    saturated = 0
+    for _ in range(server.MAX_PENDING_COMMANDS + 40):
+        status, _body = post_json(port, "/api/command", {"name": "refresh"})
+        if status == 202:
+            accepted += 1
+        elif status == 429:
+            saturated += 1
+    assert saturated > 0, "spool accepted every command; it is unbounded"
+    assert accepted <= server.MAX_PENDING_COMMANDS
+    assert len(list(paths.spool_dir.glob("*.json"))) <= server.MAX_PENDING_COMMANDS
+
+
+def test_the_spool_accepts_again_once_drained(serve, paths):
+    port = serve()
+    for _ in range(server.MAX_PENDING_COMMANDS + 5):
+        post_json(port, "/api/command", {"name": "refresh"})
+    for spooled in paths.spool_dir.glob("*.json"):
+        spooled.unlink()
+    status, _body = post_json(port, "/api/command", {"name": "refresh"})
+    assert status == 202
+
+
+def test_deeply_nested_json_is_400_not_500(serve):
+    # Parses fine, then blows the stack inside validation. Bad input, not a
+    # server fault -- and it must not be reported as one.
+    depth = 30_000
+    body = '{"name": ' + "[" * depth + "]" * depth + "}"
+    status, _headers, raw = request(
+        serve(), "POST", "/api/command",
+        body=body.encode(), headers={"Content-Type": "application/json"},
+    )
+    assert status == 400
+
+
+def test_a_500_is_logged(serve, monkeypatch, capfd):
+    def boom(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied", "/data/config/config.json")
+
+    monkeypatch.setattr(server, "_write_setting", boom)
+    port = serve()
+    status, _payload = post_json(port, "/api/config", {"key": "language", "value": "ko"})
+    assert status == 500
+    # An unlogged 500 leaves no trace in the container's only log sink.
+    err = capfd.readouterr().err
+    assert "500" in err and "PermissionError" in err
+    # The traceback names server paths and must not be printed.
+    assert "/data/config/config.json" not in err
