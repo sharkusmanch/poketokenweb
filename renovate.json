@@ -1,0 +1,43 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "timezone": "America/Los_Angeles",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Group the frontend toolchain into one PR; they move together.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "groupName": "frontend tooling"
+    },
+    {
+      "description": "apprise is the only runtime dependency and the only one that can change notification behaviour. Keep it visible on its own.",
+      "matchManagers": ["pip_requirements", "pep621"],
+      "matchPackageNames": ["apprise"],
+      "groupName": "apprise"
+    },
+    {
+      "description": "Base images are pinned by ARG in the Dockerfile.",
+      "matchManagers": ["dockerfile"],
+      "groupName": "container base images"
+    },
+    {
+      "description": "Pin GitHub Actions to tags; digest pinning here would fight the attestation subject.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "schedule": ["at any time"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  }
+}

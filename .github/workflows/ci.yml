@@ -51,3 +51,37 @@ jobs:
         working-directory: web
       - run: npm run build
         working-directory: web
+
+  image:
+    runs-on: ubuntu-latest
+    # Builds without pushing: catches a broken Dockerfile on the PR rather than
+    # at tag time, when the only signal would be a failed release.
+    if: hashFiles('web/package-lock.json') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: poketokenweb:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: The image must start, serve /healthz, and stop cleanly
+        run: |
+          docker run -d --name ptw -p 18080:8080 \
+            -e HOME=/config -e TZ=UTC poketokenweb:ci
+          for i in $(seq 1 60); do
+            if curl -sf localhost:18080/healthz > /dev/null; then break; fi
+            sleep 2
+          done
+          curl -sf localhost:18080/healthz
+          curl -sf localhost:18080/api/config
+          # Exercises the entrypoint's signal path: a handler that deadlocks
+          # would hit the 30s kill timeout and fail here.
+          timeout 30 docker stop ptw
+          test "$(docker inspect -f '{{.State.ExitCode}}' ptw)" = "0"
+      - name: Container logs
+        if: always()
+        run: docker logs ptw || true

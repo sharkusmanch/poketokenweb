@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+web/node_modules
+web/dist
+docs
+tests
+assets
+**/__pycache__
+*.pyc
+.gitignore
+README.md
+docker-compose.yml
