@@ -29,13 +29,21 @@ from pathlib import Path
 import apprise
 import pytest
 
+from poketokenbar import pokeapi, sprites as sprites_mod
 from poketokenbar.cache import ScanCache
 from poketokenbar.daemon import Daemon
 from poketokenbar.pokeapi import PokeAPI
 from poketokenbar.providers.claude import ClaudeProvider
 from poketokenbar.providers.codex import CodexProvider
 from poketokenbar.sprites import SpriteStore
-from poketokenweb import events, heartbeat, paths as paths_module, runner
+from poketokenweb import (
+    endpoints,
+    events,
+    heartbeat,
+    paths as paths_module,
+    runner,
+    species,
+)
 from poketokenweb.notify import Notifier
 
 
@@ -192,6 +200,120 @@ def test_build_daemon_never_falls_back_to_home(tmp_path, monkeypatch):
 
     assert not (fake_home / ".cache").exists()
     assert paths.scan_db.is_file()
+
+
+# --- settings actually reach the engine ------------------------------------
+# Every one of these is configured by rebinding an engine global from
+# build_daemon. Delete that call and the unit tests for the setting itself stay
+# green while the setting does nothing at all -- so pin the wiring here.
+
+
+@pytest.fixture
+def restore_endpoint_globals():
+    saved = (pokeapi.REST_BASE, pokeapi.GRAPHQL_URL,
+             sprites_mod.SPRITE_BASE, sprites_mod.ITEM_BASE,
+             pokeapi.MAX_SPECIES_ID)
+    yield
+    (pokeapi.REST_BASE, pokeapi.GRAPHQL_URL,
+     sprites_mod.SPRITE_BASE, sprites_mod.ITEM_BASE,
+     pokeapi.MAX_SPECIES_ID) = saved
+
+
+def test_build_daemon_installs_the_configured_endpoints(
+    tmp_path, monkeypatch, restore_endpoint_globals
+):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv(endpoints.REST_ENV, "http://pokeapi.local/api/v2")
+    monkeypatch.setenv(endpoints.GRAPHQL_ENV, "http://pokeapi.local/v1beta2")
+    monkeypatch.setenv(endpoints.SPRITE_ENV, "http://sprites.local/s")
+    paths = make_paths(tmp_path)
+
+    _daemon, cache = runner.build_daemon(paths)
+    try:
+        assert pokeapi.REST_BASE == "http://pokeapi.local/api/v2"
+        assert pokeapi.GRAPHQL_URL == "http://pokeapi.local/v1beta2"
+        assert sprites_mod.SPRITE_BASE == "http://sprites.local/s/pokemon"
+        assert sprites_mod.ITEM_BASE == "http://sprites.local/s/items"
+    finally:
+        cache.close()
+
+
+def test_build_daemon_installs_the_configured_species_cap(
+    tmp_path, monkeypatch, restore_endpoint_globals
+):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv(species.ENV_NAME, "1025")
+    paths = make_paths(tmp_path)
+
+    _daemon, cache = runner.build_daemon(paths)
+    try:
+        assert pokeapi.MAX_SPECIES_ID == 1025
+    finally:
+        cache.close()
+
+
+def test_build_daemon_drops_species_cached_from_the_previous_endpoint(
+    tmp_path, monkeypatch, restore_endpoint_globals
+):
+    """A cached document carries an absolute chain URL for the OLD host.
+
+    Left in place it makes the app fetch from a host it is no longer pointed
+    at -- which the chain guard then rejects, so the companion simply stops
+    evolving. Invalidation has to happen here, before the engine reads it.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    paths = make_paths(tmp_path)
+    stale = paths.cache_dir / endpoints.SPECIES_DIRNAME / "25.json"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text(
+        json.dumps({"evolution_chain": {"url": "https://pokeapi.co/api/v2/evolution-chain/10/"}})
+    )
+    (paths.cache_dir / endpoints.MARKER_FILENAME).write_text(endpoints.DEFAULT_REST)
+
+    monkeypatch.setenv(endpoints.REST_ENV, "http://pokeapi.local/api/v2")
+    _daemon, cache = runner.build_daemon(paths)
+    try:
+        assert not stale.exists()
+    finally:
+        cache.close()
+
+
+def test_build_daemon_keeps_the_cache_when_nothing_changed(
+    tmp_path, monkeypatch, restore_endpoint_globals
+):
+    """Otherwise every boot refetches the whole Pokedex over the network."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    paths = make_paths(tmp_path)
+    kept = paths.cache_dir / endpoints.SPECIES_DIRNAME / "25.json"
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    kept.write_text("{}")
+    (paths.cache_dir / endpoints.MARKER_FILENAME).write_text(endpoints.DEFAULT_REST)
+    (paths.cache_dir / species.MARKER_FILENAME).write_text(str(species.DEFAULT_MAX_SPECIES_ID))
+    index = paths.cache_dir / species.INDEX_FILENAME
+    index.write_text("[]")
+
+    _daemon, cache = runner.build_daemon(paths)
+    try:
+        assert kept.exists()
+        assert index.exists()
+    finally:
+        cache.close()
+
+
+def test_a_rejected_endpoint_is_logged_rather_than_silently_ignored(
+    tmp_path, monkeypatch, capsys, restore_endpoint_globals
+):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv(endpoints.REST_ENV, "pokeapi.local/api/v2")   # no scheme
+    paths = make_paths(tmp_path)
+
+    _daemon, cache = runner.build_daemon(paths)
+    try:
+        assert pokeapi.REST_BASE == endpoints.DEFAULT_REST
+    finally:
+        cache.close()
+
+    assert endpoints.REST_ENV in capsys.readouterr().err
 
 
 # --- SQLite thread affinity (the central constraint) -----------------------

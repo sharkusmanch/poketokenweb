@@ -61,6 +61,9 @@ Everything is an environment variable; nothing is compiled in.
 | `CLAUDE_CONFIG_DIR` | *(unset)* | Claude **config** dir, if yours is not the default; `projects/` is appended to it. Claude Code defines this name. |
 | `POKETOKENWEB_CLAUDE_PROJECT_ROOTS` | *(unset)* | Extra transcript directories to scan, `:`-separated. Each is scanned recursively. In Docker these are paths **inside** the container, so mount them too. |
 | `POKETOKENWEB_MAX_SPECIES_ID` | `649` | Highest species the companion pool draws from. See [Which Pokémon can hatch](#which-pokémon-can-hatch). |
+| `POKETOKENWEB_POKEAPI_BASE_URL` | `https://pokeapi.co/api/v2` | PokéAPI REST base. See [Running your own PokéAPI](#running-your-own-pokéapi). |
+| `POKETOKENWEB_POKEAPI_GRAPHQL_URL` | `https://graphql.pokeapi.co/v1beta2` | PokéAPI GraphQL endpoint. Used once, to build the hatch pool. |
+| `POKETOKENWEB_SPRITE_BASE_URL` | `.../PokeAPI/sprites/master/sprites` | Root of the sprite repository; species and item art are derived from it. |
 
 ### Which Pokémon can hatch
 
@@ -83,6 +86,32 @@ Two things to know first:
 
 Changing this drops the cached species index so the new range takes effect on the next
 poll. Your Pokédex and current companion are untouched.
+
+### Running your own PokéAPI
+
+Species data and sprites are fetched from public services. Both can be repointed at a
+[self-hosted PokéAPI](https://github.com/PokeAPI/pokeapi) and a local copy of
+[PokeAPI/sprites](https://github.com/PokeAPI/sprites), which is what you want for offline
+operation or to stop depending on a service you do not run:
+
+```bash
+POKETOKENWEB_POKEAPI_BASE_URL=http://pokeapi.local/api/v2
+POKETOKENWEB_POKEAPI_GRAPHQL_URL=http://pokeapi.local/v1beta2
+POKETOKENWEB_SPRITE_BASE_URL=http://sprites.local/sprites
+```
+
+Each is independent — pointing only the sprites at a local mirror is fine.
+
+- **The three are separate services.** Upstream serves REST and GraphQL from different
+  hosts, and sprites from a git repository, so there is no single "PokéAPI URL" to set.
+- **A URL that is not absolute `http(s)` is refused** and the default is used instead,
+  with a line in the log saying so — a silent fallback to the public API is exactly what
+  an offline deployment would never notice.
+- **Changing the REST base drops the cached species documents.** Each one embeds an
+  absolute evolution-chain URL pointing at whoever served it, so keeping them would send
+  the app back to the old host. Sprites are keyed by species id and survive.
+- **Remember the egress rules.** If you restrict outbound traffic, the new hosts need to
+  be allowed and the old ones no longer do.
 
 ### Notifications
 
@@ -116,7 +145,10 @@ user, set `PUID`/`PGID` in `.env` (see `.env.example`).
   token counts still work; only the limits section disappears.
 - Outbound network is limited to: `api.anthropic.com`, `pokeapi.co`,
   `raw.githubusercontent.com` (sprites), the Anthropic/OpenAI status pages, and whatever
-  `APPRISE_URLS` points at.
+  `APPRISE_URLS` points at. The two PokéAPI hosts are configurable — see
+  [Running your own PokéAPI](#running-your-own-pokéapi).
+- An evolution-chain URL arrives inside a PokéAPI response and is then fetched, so it is
+  constrained to the origin of the endpoint actually configured.
 
 ## Data sources
 
@@ -127,7 +159,7 @@ user, set `PUID`/`PGID` in `.env` (see `.env.example`).
 | `~/.codex/sessions/**/*.jsonl` | Codex usage |
 | `~/.claude/.credentials.json` | OAuth token for official limits (optional) |
 | `~/.claude.json` | Which account those limits belong to (optional) |
-| [PokéAPI](https://pokeapi.co/) + [PokeAPI/sprites](https://github.com/PokeAPI/sprites) | Species, evolution chains, sprites — fetched at runtime, cached, never bundled |
+| [PokéAPI](https://pokeapi.co/) + [PokeAPI/sprites](https://github.com/PokeAPI/sprites) | Species, evolution chains, sprites — fetched at runtime, cached, never bundled. Both [configurable](#running-your-own-pokéapi). |
 
 ## What's missing compared to the macOS app
 
@@ -146,9 +178,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
 cd web && npm ci && npm test && npm run build
 ```
 
-The upstream Swift sources are the specification for game behaviour; `poketokenbar/` is
-kept unmodified from the Linux port so its fixes can be merged. CI prints a drift diff
-against that upstream on every run.
+The upstream Swift sources are the specification for game behaviour. `poketokenbar/` is
+kept as close to the Linux port as possible so its fixes can be merged; CI prints a drift
+diff against that upstream on every run. Settings reach the engine by rebinding module
+globals it reads at call time, rather than by editing it. One change could not be made
+that way and is the sole deliberate edit: the evolution-chain guard compared against a
+string literal, which no rebinding can reach.
 
 ## License & disclaimer
 

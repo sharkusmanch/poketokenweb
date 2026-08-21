@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,15 @@ from .companion import EvoLine
 
 REST_BASE = "https://pokeapi.co/api/v2"
 GRAPHQL_URL = "https://graphql.pokeapi.co/v1beta2"
+
+
+def _endpoint_origin() -> str:
+    """Scheme and host of REST_BASE, with a trailing slash.
+
+    Read at call time so REST_BASE may be repointed at a self-hosted instance.
+    """
+    parts = urlsplit(REST_BASE)
+    return f"{parts.scheme}://{parts.netloc}/"
 # Gen I-V. The animated Black/White sprites the panel uses stop here.
 MAX_SPECIES_ID = 649
 LANG_CODES = ("ko", "en", "ja-Hrkt", "ja", "es")
@@ -138,7 +148,11 @@ class PokeAPI:
 
         base = self.species(base_species_id)
         chain_url = (base.get("evolution_chain") or {}).get("url")
-        if not chain_url or not chain_url.startswith("https://pokeapi.co/"):
+        # The chain URL arrives inside the API's own response and is then
+        # fetched, so it must be constrained -- but to the endpoint actually in
+        # use, not to the public host. A self-hosted instance returns URLs
+        # pointing at itself, which a literal "https://pokeapi.co/" rejects.
+        if not chain_url or not chain_url.startswith(_endpoint_origin()):
             raise PokeAPIError(f"bad evolution chain url for {base_species_id}")
         chain = _get_json(chain_url)
 

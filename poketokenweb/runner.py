@@ -44,7 +44,7 @@ from poketokenbar.sprites import SpriteStore
 from poketokenbar.status import StatusChecker
 
 from . import celebration as celebration_text
-from . import claude_roots, events, heartbeat, species
+from . import claude_roots, endpoints, events, heartbeat, species
 from .notify import Notifier
 from .paths import Paths
 
@@ -62,6 +62,20 @@ def build_daemon(paths: Paths) -> tuple[Daemon, ScanCache]:
     lifetime: it must be closed on the same thread that created it.
     """
     paths.ensure()
+
+    # Before anything fetches: repoint PokeAPI and the sprite CDN, dropping
+    # cached species documents if the host changed -- they embed absolute
+    # evolution_chain URLs and would otherwise send us back to the old one.
+    where = endpoints.apply(cache_dir=paths.cache_dir)
+    for problem in where.rejected:
+        # Never silent: falling back to the PUBLIC api is exactly what someone
+        # running an offline instance would fail to notice.
+        log(f"pokeapi endpoint: {problem} - using the default instead")
+    if where.customised:
+        log(
+            f"pokeapi: rest={where.rest} graphql={where.graphql} "
+            f"sprites={where.sprite_root}"
+        )
 
     # Before anything reads the cached base-species index: this rebinds the
     # engine's species cap and drops an index built under a different one.
