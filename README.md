@@ -60,6 +60,29 @@ Everything is an environment variable; nothing is compiled in.
 | `POKETOKENWEB_SPOOL_DIR` | `/tmp/poketokenbar/commands` | UI → daemon command queue. |
 | `CLAUDE_CONFIG_DIR` | *(unset)* | Claude **config** dir, if yours is not the default; `projects/` is appended to it. Claude Code defines this name. |
 | `POKETOKENWEB_CLAUDE_PROJECT_ROOTS` | *(unset)* | Extra transcript directories to scan, `:`-separated. Each is scanned recursively. In Docker these are paths **inside** the container, so mount them too. |
+| `POKETOKENWEB_MAX_SPECIES_ID` | `649` | Highest species the companion pool draws from. See [Which Pokémon can hatch](#which-pokémon-can-hatch). |
+
+### Which Pokémon can hatch
+
+By default the pool is **Gen I–V** (species 1–649, which is 328 evolution-line starts).
+That is where the Black/White *animated* sprite set ends — PokéAPI itself serves all nine
+generations, so the limit is aesthetic rather than a data one.
+
+To include everything through Gen IX:
+
+```bash
+POKETOKENWEB_MAX_SPECIES_ID=1025    # 540 base species instead of 328
+```
+
+Two things to know first:
+
+- **Species past 649 have no animated sprite** and fall back to static art, so whether
+  your companion animates depends on which one you get.
+- **It shifts the odds.** Rarity is weighted by capture rate and the later generations are
+  legendary-dense, so the whole curve moves. The pacing was tuned against Gen I–V.
+
+Changing this drops the cached species index so the new range takes effect on the next
+poll. Your Pokédex and current companion are untouched.
 
 ### Notifications
 

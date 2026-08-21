@@ -44,7 +44,7 @@ from poketokenbar.sprites import SpriteStore
 from poketokenbar.status import StatusChecker
 
 from . import celebration as celebration_text
-from . import claude_roots, events, heartbeat
+from . import claude_roots, events, heartbeat, species
 from .notify import Notifier
 from .paths import Paths
 
@@ -62,6 +62,17 @@ def build_daemon(paths: Paths) -> tuple[Daemon, ScanCache]:
     lifetime: it must be closed on the same thread that created it.
     """
     paths.ensure()
+
+    # Before anything reads the cached base-species index: this rebinds the
+    # engine's species cap and drops an index built under a different one.
+    cap = species.apply(cache_dir=paths.cache_dir)
+    if cap != species.DEFAULT_MAX_SPECIES_ID:
+        log(
+            f"{species.ENV_NAME}: companion pool capped at species {cap} "
+            f"(engine default {species.DEFAULT_MAX_SPECIES_ID}). Species past "
+            "649 have no animated sprite and fall back to static art."
+        )
+
     cache = ScanCache(paths.scan_db)
     # Extra transcript roots are dropped silently by the engine when absent,
     # which is indistinguishable from "not configured" -- say so once instead.
