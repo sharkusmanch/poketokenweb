@@ -85,10 +85,13 @@ STRINGS: dict[str, tuple[str, str, str, str]] = {
     "common": ("Common", "일반", "コモン", "Común"),
     # misc
     "refresh": ("Refresh", "새로고침", "更新", "Actualizar"),
+    # "poketokend" was the systemd unit of the Linux port; in a browser it
+    # names nothing the reader can act on.
     "stale_warning": (
-        "Data is stale — is poketokend running?", "데이터가 오래됐어요 — poketokend 실행 중인가요?",
-        "データが古いです — poketokend は動作中ですか？",
-        "Datos obsoletos — ¿poketokend está en marcha?",
+        "Data is stale — the tracker may have stopped.",
+        "데이터가 오래됐어요 — 트래커가 멈췄을 수 있어요.",
+        "データが古いです — トラッカーが停止しているかもしれません。",
+        "Datos obsoletos — puede que el rastreador se haya detenido.",
     ),
     "at_this_rate": ("at this rate, full at %1", "이 속도면 %1 에 도달", "このペースだと %1 に到達", "a este ritmo, lleno a las %1"),
 }

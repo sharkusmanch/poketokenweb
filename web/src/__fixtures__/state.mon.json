@@ -397,7 +397,7 @@
     "uncommon": "Uncommon",
     "common": "Common",
     "refresh": "Refresh",
-    "stale_warning": "Data is stale — is poketokend running?",
+    "stale_warning": "Data is stale — the tracker may have stopped.",
     "at_this_rate": "at this rate, full at %1"
   },
   "celebration": {},
