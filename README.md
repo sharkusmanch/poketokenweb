@@ -15,6 +15,10 @@ an egg, evolve it through its real evolution line, graduate it into your Pokéde
 start again. Underneath the companion it is a precise usage tracker — today's spend, cost,
 and official 5-hour / weekly limits, read straight from your local logs.
 
+<div align="center">
+<img src="assets/screenshot-home.png" width="380" alt="Home screen: an Oshawott companion with its evolution line, today's token spend and cost, and week/month totals">
+</div>
+
 > Unofficial, non-commercial Pokémon fan project. See [License & disclaimer](#license--disclaimer).
 
 ## Credits — this is a derivative work
