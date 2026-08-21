@@ -89,8 +89,10 @@ class StubApprise:
     def add(self, url: str) -> bool:
         return True
 
-    def notify(self, body: str, title: str, notify_type) -> bool:
-        self.sent.append({"body": body, "title": title, "notify_type": notify_type})
+    def notify(self, body: str, title: str, notify_type, attach=None) -> bool:
+        self.sent.append(
+            {"body": body, "title": title, "notify_type": notify_type, "attach": attach}
+        )
         return True
 
 
@@ -306,17 +308,155 @@ def test_celebration_is_logged_and_pushed(tmp_path, capsys):
     stored = events.read(paths.events_file)
     assert len(stored) == 1
     assert stored[0]["kind"] == "hatched"
-    assert stored[0]["title"] == CELEBRATION["title"]
-    assert stored[0]["detail"] == CELEBRATION["detail"]
+    # Enriched, not the engine's bare sentence -- and the STORED text matches
+    # what was pushed, so Recent activity and the phone cannot drift.
+    assert stored[0]["title"] == "🐣 " + CELEBRATION["title"]
+    assert CELEBRATION["detail"] in stored[0]["detail"]
     assert stored[0]["published_at"] == 1234.0
 
-    assert stub.sent == [
+    assert len(stub.sent) == 1
+    assert stub.sent[0]["title"] == stored[0]["title"]
+    assert stub.sent[0]["body"] == stored[0]["detail"]
+    assert stub.sent[0]["notify_type"] == apprise.NotifyType.SUCCESS
+    capsys.readouterr()
+
+
+def test_the_companion_facts_reach_the_push(tmp_path, capsys):
+    """Rarity and nature are known at this moment and used to be discarded."""
+    paths = make_paths(tmp_path)
+    notifier, stub = stub_notifier()
+    daemon = FakeDaemon(
         {
-            "title": CELEBRATION["title"],
-            "body": CELEBRATION["detail"],
-            "notify_type": apprise.NotifyType.SUCCESS,
+            "errors": [],
+            "celebration": dict(CELEBRATION),
+            "companion": {
+                "stage": "mon",
+                "species_id": 4,
+                "name": "Charmander",
+                "rarity": "rare",
+                "nature": "relaxed",
+                "is_shiny": False,
+                "stage_index": 0,
+                "total_forms": 3,
+            },
         }
-    ]
+    )
+
+    runner.run_once(paths, notifier, daemon, now=1.0)
+
+    body = stub.sent[0]["body"]
+    assert "Rare" in body
+    assert "relaxed nature" in body
+    assert "stage 1 of 3" in body
+    capsys.readouterr()
+
+
+def test_the_static_sprite_is_attached(tmp_path, capsys):
+    paths = make_paths(tmp_path)
+    notifier, stub = stub_notifier()
+    sprite = tmp_path / "4-s.png"
+    sprite.write_bytes(b"\x89PNG")
+
+    class Store:
+        def __init__(self):
+            self.asked = []
+
+        def path(self, species_id, animated=True, shiny=False):
+            self.asked.append((species_id, animated, shiny))
+            return sprite
+
+    store = Store()
+    daemon = FakeDaemon(
+        {
+            "errors": [],
+            "celebration": dict(CELEBRATION),
+            "companion": {"stage": "mon", "species_id": 4, "is_shiny": False},
+        }
+    )
+    daemon.companion_store = type("CS", (), {"sprites": store})()
+
+    runner.run_once(paths, notifier, daemon, now=1.0)
+
+    # Static, not the animated GIF: Pushover shows a still frame anyway and
+    # PNG is the safer common denominator.
+    assert store.asked == [(4, False, False)]
+    assert stub.sent[0]["attach"] == str(sprite)
+    capsys.readouterr()
+
+
+def test_a_missing_sprite_costs_the_picture_not_the_push(tmp_path, capsys):
+    paths = make_paths(tmp_path)
+    notifier, stub = stub_notifier()
+
+    class Store:
+        def path(self, species_id, animated=True, shiny=False):
+            return None
+
+    daemon = FakeDaemon(
+        {
+            "errors": [],
+            "celebration": dict(CELEBRATION),
+            "companion": {"stage": "mon", "species_id": 4},
+        }
+    )
+    daemon.companion_store = type("CS", (), {"sprites": Store()})()
+
+    runner.run_once(paths, notifier, daemon, now=1.0)
+
+    assert len(stub.sent) == 1
+    assert stub.sent[0]["attach"] is None
+    capsys.readouterr()
+
+
+def test_a_raising_sprite_store_costs_the_picture_not_the_push(tmp_path, capsys):
+    paths = make_paths(tmp_path)
+    notifier, stub = stub_notifier()
+
+    class Store:
+        def path(self, species_id, animated=True, shiny=False):
+            raise OSError("cache volume gone")
+
+    daemon = FakeDaemon(
+        {
+            "errors": [],
+            "celebration": dict(CELEBRATION),
+            "companion": {"stage": "mon", "species_id": 4},
+        }
+    )
+    daemon.companion_store = type("CS", (), {"sprites": Store()})()
+
+    runner.run_once(paths, notifier, daemon, now=1.0)
+
+    assert len(stub.sent) == 1
+    assert stub.sent[0]["attach"] is None
+    capsys.readouterr()
+
+
+def test_a_shiny_asks_for_the_shiny_sprite(tmp_path, capsys):
+    paths = make_paths(tmp_path)
+    notifier, _stub = stub_notifier()
+
+    class Store:
+        def __init__(self):
+            self.asked = []
+
+        def path(self, species_id, animated=True, shiny=False):
+            self.asked.append((species_id, animated, shiny))
+            return None
+
+    store = Store()
+    daemon = FakeDaemon(
+        {
+            "errors": [],
+            "celebration": {"kind": "shiny", "title": "A shiny hatched!", "detail": "d"},
+            "companion": {"stage": "mon", "species_id": 25, "is_shiny": True},
+        }
+    )
+    daemon.companion_store = type("CS", (), {"sprites": store})()
+
+    runner.run_once(paths, notifier, daemon, now=1.0)
+
+    assert store.asked == [(25, False, True)]
     capsys.readouterr()
 
 

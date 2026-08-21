@@ -43,6 +43,7 @@ from poketokenbar.providers.codex import CodexProvider
 from poketokenbar.sprites import SpriteStore
 from poketokenbar.status import StatusChecker
 
+from . import celebration as celebration_text
 from . import claude_roots, events, heartbeat
 from .notify import Notifier
 from .paths import Paths
@@ -99,19 +100,60 @@ def build_daemon(paths: Paths) -> tuple[Daemon, ScanCache]:
     return daemon, cache
 
 
+def _sprite_for(store, species_id: int | None, shiny: bool) -> str | None:
+    """Local path to the STATIC sprite, or None if it cannot be had.
+
+    Static rather than the animated GIF: Pushover renders a still frame either
+    way, and PNG is the safer common denominator across backends. Never raises
+    -- a missing sprite must cost the picture, not the notification.
+    """
+    if store is None or not isinstance(species_id, int):
+        return None
+    try:
+        path = store.path(species_id, animated=False, shiny=shiny)
+    except Exception:
+        return None
+    return str(path) if path is not None else None
+
+
 def _announce(
     paths: Paths,
     notifier: Notifier | None,
-    celebration: dict | None,
-    now: float | None,
+    raw: dict | None,
+    payload: dict | None,
+    sprite_store=None,
+    now: float | None = None,
 ) -> None:
-    """Persist a celebration and push it. Engine clears it after one poll."""
-    entry = events.append(paths.events_file, celebration, now=now)
+    """Persist a celebration and push it. Engine clears it after one poll.
+
+    The engine's own text is a bare sentence; celebration.describe adds the
+    rarity, nature, shininess and -- for a graduation -- how long it took, all
+    from this same payload. The enriched text is stored as well as pushed, so
+    the in-app Recent activity list and the phone say the same thing.
+    """
+    announcement = celebration_text.describe(raw, payload)
+    if announcement is None:
+        return
+
+    entry = events.append(
+        paths.events_file,
+        {
+            "kind": announcement.kind,
+            "title": announcement.title,
+            "detail": announcement.body,
+        },
+        now=now,
+    )
     if entry is None:
         return
     log(f"celebration: {entry['kind']} — {entry['title']}")
     if notifier is not None and notifier.enabled:
-        notifier.send(entry["title"], entry["detail"], entry["kind"])
+        notifier.send(
+            entry["title"],
+            entry["detail"],
+            entry["kind"],
+            attach=_sprite_for(sprite_store, announcement.species_id, announcement.shiny),
+        )
 
 
 def run_once(
@@ -128,7 +170,14 @@ def run_once(
         succeeded = True
         for error in payload.get("errors") or []:
             log(f"poll error: {error}")
-        _announce(paths, notifier, payload.get("celebration"), now)
+        _announce(
+            paths,
+            notifier,
+            payload.get("celebration"),
+            payload,
+            getattr(getattr(daemon, "companion_store", None), "sprites", None),
+            now,
+        )
     except Exception as exc:  # the thread must survive any poll
         log(f"poll failed: {type(exc).__name__}: {exc}")
     finally:

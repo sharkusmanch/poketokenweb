@@ -57,8 +57,10 @@ class FakeApprise:
         self.servers.append(uri)
         return True
 
-    def notify(self, body, title="", notify_type=apprise.NotifyType.INFO):
-        self.calls.append({"body": body, "title": title, "notify_type": notify_type})
+    def notify(self, body, title="", notify_type=apprise.NotifyType.INFO, attach=None):
+        self.calls.append(
+            {"body": body, "title": title, "notify_type": notify_type, "attach": attach}
+        )
         if self.raises is not None:
             raise self.raises
         return self.result
@@ -265,3 +267,40 @@ def test_fake_agrees_with_real_apprise(uri, accepted):
     """The fake must not be hand-tuned: its verdict matches the real library."""
     assert FakeApprise().add(uri) is accepted
     assert bool(apprise.Apprise().add(uri)) is accepted
+
+
+# --- attachments -----------------------------------------------------------
+# Every backend this project documents reports attachment_support = True
+# (Pushover, Discord, ntfy, Telegram, Slack, email, and the Apprise API
+# server), and Apprise drops attachments for backends that cannot take them --
+# so the sprite is passed unconditionally rather than gated per target.
+
+def test_a_sprite_path_is_forwarded_to_apprise():
+    fake = FakeApprise()
+    n = notify.Notifier(["json://example.com/hook"], factory=lambda: fake)
+    assert n.send("t", "b", "hatched", attach="/data/cache/sprites/501-s.png") is True
+    assert fake.calls[0]["attach"] == "/data/cache/sprites/501-s.png"
+
+
+def test_no_attachment_sends_none_not_an_empty_string():
+    # Apprise treats "" as an attachment it must resolve, and fails.
+    fake = FakeApprise()
+    n = notify.Notifier(["json://example.com/hook"], factory=lambda: fake)
+    n.send("t", "b", "hatched")
+    assert fake.calls[0]["attach"] is None
+    n.send("t", "b", "hatched", attach="")
+    assert fake.calls[1]["attach"] is None
+
+
+def test_a_failing_attachment_never_raises():
+    fake = FakeApprise()
+    fake.raises = OSError("cannot read sprite")
+    n = notify.Notifier(["json://example.com/hook"], factory=lambda: fake)
+    assert n.send("t", "b", "hatched", attach="/nope.png") is False
+
+
+def test_the_real_library_accepts_the_attach_keyword():
+    # Guards against an Apprise upgrade renaming the parameter: the fake would
+    # happily keep accepting it.
+    import inspect
+    assert "attach" in inspect.signature(apprise.Apprise.notify).parameters

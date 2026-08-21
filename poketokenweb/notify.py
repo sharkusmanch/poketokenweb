@@ -102,8 +102,17 @@ class Notifier:
         """True only when at least one URI was accepted by Apprise."""
         return bool(self.accepted)
 
-    def send(self, title: str, body: str, kind: str) -> bool:
-        """Push one celebration. Returns delivery success; NEVER raises."""
+    def send(
+        self, title: str, body: str, kind: str, attach: str | None = None
+    ) -> bool:
+        """Push one celebration. Returns delivery success; NEVER raises.
+
+        `attach` is a local file path -- the companion's sprite. Apprise routes
+        it only to backends that accept attachments and silently ignores it
+        elsewhere, so it is safe to pass unconditionally: every target in this
+        project's docs (Pushover, Discord, ntfy, Telegram, Slack, email, and
+        the Apprise API server) reports attachment_support = True.
+        """
         if not self.enabled:
             return False
         try:
@@ -112,6 +121,8 @@ class Notifier:
                     body=body,
                     title=title,
                     notify_type=notify_type_for(kind),
+                    # None is Apprise's own "no attachment" default.
+                    attach=attach or None,
                 )
             )
         except Exception:
