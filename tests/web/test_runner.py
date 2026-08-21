@@ -234,7 +234,6 @@ def test_scan_cache_is_usable_from_the_poll_thread(tmp_path, monkeypatch):
     home.mkdir()
     expected_tokens = _write_claude_log(home)
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
 
     def no_network(*args, **kwargs):
         raise urllib.error.URLError("network disabled in tests")

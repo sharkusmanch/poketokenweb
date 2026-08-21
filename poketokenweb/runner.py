@@ -43,7 +43,7 @@ from poketokenbar.providers.codex import CodexProvider
 from poketokenbar.sprites import SpriteStore
 from poketokenbar.status import StatusChecker
 
-from . import events, heartbeat
+from . import claude_roots, events, heartbeat
 from .notify import Notifier
 from .paths import Paths
 
@@ -62,11 +62,24 @@ def build_daemon(paths: Paths) -> tuple[Daemon, ScanCache]:
     """
     paths.ensure()
     cache = ScanCache(paths.scan_db)
+    # Extra transcript roots are dropped silently by the engine when absent,
+    # which is indistinguishable from "not configured" -- say so once instead.
+    # Logged, never fatal: in a container the mount may legitimately appear late.
+    extra_roots = claude_roots.configured_roots()
+    for root in claude_roots.missing_roots(extra_roots):
+        log(
+            f"{claude_roots.PROJECT_ROOTS_ENV}: {root} is not a directory - "
+            "ignoring it. Inside a container this must be the CONTAINER path, "
+            "not the host path."
+        )
     daemon = Daemon(
         state_path=paths.state_file,
         config_path=paths.config_file,
         cache=cache,
-        providers=[ClaudeProvider(cache=cache), CodexProvider(cache=cache)],
+        providers=[
+            ClaudeProvider(cache=cache, extra_roots=extra_roots),
+            CodexProvider(cache=cache),
+        ],
         limits_source=LimitsSource(),
         companion_store=CompanionStore(
             save_path=paths.save_file,

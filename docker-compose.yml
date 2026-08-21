@@ -18,6 +18,9 @@ services:
       #   apprise://your-apprise-server:8000/your-key
       # Unset disables notifications.
       APPRISE_URLS: ${APPRISE_URLS:-}
+      # Extra transcript dirs to scan, ':'-separated. CONTAINER paths -- pair
+      # each one with a read-only volume below. Unset scans nothing extra.
+      POKETOKENWEB_CLAUDE_PROJECT_ROOTS: ${POKETOKENWEB_CLAUDE_PROJECT_ROOTS:-}
     volumes:
       # Your usage logs, READ-ONLY. The app never writes here.
       - ${CLAUDE_HOME:-${HOME}}/.claude:/config/.claude:ro
@@ -27,6 +30,9 @@ services:
       - ${CLAUDE_HOME:-${HOME}}/.claude.json:/config/.claude.json:ro
       # Codex usage. Comment out if you do not use Codex.
       - ${CLAUDE_HOME:-${HOME}}/.codex:/config/.codex:ro
+      # Transcripts from another machine, READ-ONLY. The path on the RIGHT is
+      # what POKETOKENWEB_CLAUDE_PROJECT_ROOTS must name.
+      # - /mnt/other-machine/.claude/projects:/config/extra/other-machine:ro
       # Companion save, settings, sprite cache, scan cache.
       - poketokenweb-data:/data
     # The image runs as 1000:1000. If your logs are owned by a different user,

@@ -8,7 +8,7 @@ with the LARGEST total, and bucket by local date from `timestamp`.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from datetime import date as _date
 from datetime import datetime
 from pathlib import Path
@@ -99,13 +99,20 @@ def parse_file(path: Path) -> list[Entry]:
 
 
 def project_roots(
-    home: Path | None = None, env: Mapping[str, str] | None = None
+    home: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    extra: Iterable[Path] | None = None,
 ) -> list[Path]:
     """Existing Claude project roots, symlink-deduplicated.
 
     macOS also probes ~/Library/Application Support/Claude for Claude Desktop
     embedded sessions. That path cannot exist on Linux, so it is omitted rather
     than branched on.
+
+    ``extra`` are already-resolved roots supplied by the caller, for sources
+    this env-based discovery cannot know about. They are appended as ordinary
+    candidates so they get the same is-a-directory and symlink dedup treatment
+    -- an extra root that duplicates a discovered one must not double the scan.
     """
     home = home or Path.home()
     env = os.environ if env is None else env
@@ -114,6 +121,7 @@ def project_roots(
     configured = env.get("CLAUDE_CONFIG_DIR")
     if configured:
         candidates.append(Path(configured) / "projects")
+    candidates.extend(extra or ())
 
     seen: set[Path] = set()
     roots: list[Path] = []
@@ -142,15 +150,21 @@ class ClaudeProvider:
     # Bump when parse_line changes shape, to invalidate cached blobs.
     PARSER_VERSION = 1
 
-    def __init__(self, cache: ScanCache | None = None, home: Path | None = None) -> None:
+    def __init__(
+        self,
+        cache: ScanCache | None = None,
+        home: Path | None = None,
+        extra_roots: Iterable[Path] | None = None,
+    ) -> None:
         self._cache = cache
         self._home = home
+        self._extra_roots = list(extra_roots or ())
 
     def scan_entries(self) -> list[Entry]:
         """Every parsed entry across all roots, globally deduplicated."""
         all_entries: list[Entry] = []
         live: set[str] = set()
-        for root in project_roots(home=self._home):
+        for root in project_roots(home=self._home, extra=self._extra_roots):
             for path in jsonl_files(root):
                 try:
                     stat = path.stat()

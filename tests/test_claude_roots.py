@@ -20,6 +20,29 @@ def test_claude_config_dir_env_is_honoured(tmp_path):
     assert custom / "projects" in roots
 
 
+def test_extra_roots_are_included(tmp_path):
+    # Generic seam: callers may supply roots the env-based discovery cannot
+    # know about. Kept name-agnostic so no fork-specific setting leaks in here.
+    extra = tmp_path / "elsewhere" / "projects"
+    extra.mkdir(parents=True)
+    roots = claude.project_roots(home=tmp_path, env={}, extra=[extra])
+    assert extra in roots
+
+
+def test_extra_roots_that_do_not_exist_are_dropped(tmp_path):
+    roots = claude.project_roots(home=tmp_path, env={}, extra=[tmp_path / "nope"])
+    assert roots == []
+
+
+def test_extra_root_duplicating_a_discovered_root_is_collapsed(tmp_path):
+    # Must go through the SAME dedup as discovered roots, or the tree is
+    # scanned twice on every cold pass.
+    default = tmp_path / ".claude" / "projects"
+    default.mkdir(parents=True)
+    roots = claude.project_roots(home=tmp_path, env={}, extra=[default])
+    assert roots == [default]
+
+
 def test_missing_roots_are_dropped(tmp_path):
     assert claude.project_roots(home=tmp_path, env={}) == []
 

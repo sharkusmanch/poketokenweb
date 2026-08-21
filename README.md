@@ -58,7 +58,8 @@ Everything is an environment variable; nothing is compiled in.
 | `POKETOKENWEB_DATA_DIR` | `/data` | Save, settings, sprite cache, scan cache. |
 | `POKETOKENWEB_WEB_ROOT` | `/app/web` | Built frontend assets. |
 | `POKETOKENWEB_SPOOL_DIR` | `/tmp/poketokenbar/commands` | UI → daemon command queue. |
-| `CLAUDE_CONFIG_DIR` | *(unset)* | Extra Claude project root, if you use one. |
+| `CLAUDE_CONFIG_DIR` | *(unset)* | Claude **config** dir, if yours is not the default; `projects/` is appended to it. Claude Code defines this name. |
+| `POKETOKENWEB_CLAUDE_PROJECT_ROOTS` | *(unset)* | Extra transcript directories to scan, `:`-separated. Each is scanned recursively. In Docker these are paths **inside** the container, so mount them too. |
 
 ### Notifications
 
@@ -99,6 +100,7 @@ user, set `PUID`/`PGID` in `.env` (see `.env.example`).
 | Path | Read for |
 |---|---|
 | `~/.claude/projects/**/*.jsonl` | Claude Code usage |
+| Any dir in `POKETOKENWEB_CLAUDE_PROJECT_ROOTS` | Extra Claude Code usage, scanned recursively (opt-in, unset by default) |
 | `~/.codex/sessions/**/*.jsonl` | Codex usage |
 | `~/.claude/.credentials.json` | OAuth token for official limits (optional) |
 | `~/.claude.json` | Which account those limits belong to (optional) |
