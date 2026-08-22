@@ -21,6 +21,7 @@ IMPORT-TIME I/O IS FORBIDDEN HERE.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from pathlib import Path
 
 from poketokenbar import companion, l10n, shop
@@ -164,7 +165,68 @@ def public_state(payload: dict, sprite_dir: Path) -> dict:
         for entry in (raw_errors if isinstance(raw_errors, list) else [])
     ]
     _redact_account(out)
+    _drop_forecasts_past_the_reset(out)
     return out
+
+
+# The engine fits a slope to the utilization samples and extrapolates it to
+# 100%. It is never told when the window RESETS, so it will happily forecast an
+# ETA hours past the point where utilization drops back to zero -- "at this
+# rate, full at 05:08" for a 5-hour window that resets at 20:00. The hour is
+# correct arithmetic for a moment that cannot arrive, which reads as a wrong
+# clock rather than a wrong forecast (this was reported as a timezone bug).
+#
+# Dropped rather than clamped to the reset: the window does not fill at the
+# reset, it empties. There is no true ETA to show, and the engine already has a
+# "no meaningful ETA" shape -- a rate with no eta_text, which the UI hides --
+# so this reuses it instead of inventing a second one.
+#
+# rate_per_minute is kept: the burn is real even when the cap is not reachable.
+
+
+def _forecast_reference(payload: dict) -> float | None:
+    """The instant the forecast was computed from."""
+    updated = payload.get("updated_at")
+    return float(updated) if isinstance(updated, (int, float)) else None
+
+
+def _resets_at_epoch(limits: dict, kind: str) -> float | None:
+    window = limits.get(kind)
+    if not isinstance(window, dict):
+        return None
+    raw = window.get("resets_at")
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw).timestamp()
+    except ValueError:
+        # An unparseable reset is not a reason to suppress a forecast.
+        return None
+
+
+def _drop_forecasts_past_the_reset(out: dict) -> None:
+    burn = out.get("burn")
+    limits = out.get("limits")
+    if not isinstance(burn, dict) or not isinstance(limits, dict):
+        return
+    reference = _forecast_reference(out)
+    if reference is None:
+        # Without the instant the forecast was made, minutes_to_full cannot be
+        # placed on a timeline. Leave it alone rather than guess with now().
+        return
+
+    for kind, forecast in burn.items():
+        if not isinstance(forecast, dict):
+            continue
+        minutes = forecast.get("minutes_to_full")
+        if not isinstance(minutes, (int, float)):
+            continue
+        resets_at = _resets_at_epoch(limits, kind)
+        if resets_at is None:
+            continue
+        if reference + minutes * 60.0 >= resets_at:
+            forecast["minutes_to_full"] = None
+            forecast["eta_text"] = ""
 
 
 # Of the account block the engine attaches to limits, only the display name is

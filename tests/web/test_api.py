@@ -740,3 +740,144 @@ def test_redaction_does_not_mutate_the_callers_payload(tmp_path):
     original = _copy.deepcopy(_ACCOUNT_PAYLOAD)
     api.public_state(_ACCOUNT_PAYLOAD, tmp_path)
     assert _ACCOUNT_PAYLOAD == original
+
+
+# --- forecasts that outlive the window they forecast ------------------------
+# Reported as "I don't think it's using my timezone": the app said "at this
+# rate, full at 05:08" while the 5-hour window reset at 20:00. The hour was
+# correct LOCAL arithmetic for an instant that cannot arrive -- the window
+# empties at 20:00, so 100% is never reached and the ETA is fiction.
+#
+# The engine fits a slope and extrapolates to 100% knowing nothing about
+# resets_at, so nothing downstream had ever compared the two. That is why the
+# whole suite stayed green: burn and limits were both passed through
+# public_state untouched, and no test asserted anything about their relation.
+
+# 18:42:49 PDT on 2026-08-21 -- the reference the real report was captured at.
+_NOW = 1787362969.0
+_RESET_SOON = "2026-08-22T03:00:00+00:00"   # 20:00 PDT, ~77 min later
+_RESET_LATER = "2026-08-24T15:00:00+00:00"  # ~2.8 days later
+_RESET_SOON_EPOCH = 1787367600.0             # _RESET_SOON as an epoch
+
+
+def _burn_payload(session_minutes=None, weekly_minutes=None, **overrides):
+    burn = {}
+    if session_minutes is not None:
+        burn["session"] = {
+            "rate_per_minute": 0.1119,
+            "minutes_to_full": session_minutes,
+            "eta_text": "05:08",
+        }
+    if weekly_minutes is not None:
+        burn["weekly"] = {
+            "rate_per_minute": 0.0224,
+            "minutes_to_full": weekly_minutes,
+            "eta_text": "11:50",
+        }
+    payload = {
+        "updated_at": _NOW,
+        "burn": burn,
+        "limits": {
+            "session": {"utilization": 30.0, "resets_at": _RESET_SOON},
+            "weekly": {"utilization": 77.0, "resets_at": _RESET_LATER},
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_a_forecast_past_the_reset_is_dropped(tmp_path):
+    # 626 minutes out, but the window resets in 77.
+    out = api.public_state(_burn_payload(session_minutes=626), tmp_path)
+    assert out["burn"]["session"]["eta_text"] == ""
+    assert out["burn"]["session"]["minutes_to_full"] is None
+    # The burn itself is real even though the cap is unreachable.
+    assert out["burn"]["session"]["rate_per_minute"] == 0.1119
+
+
+def test_a_forecast_inside_the_window_is_untouched(tmp_path):
+    # 60 minutes out, window resets in 77 -- this one really can happen.
+    out = api.public_state(_burn_payload(session_minutes=60), tmp_path)
+    assert out["burn"]["session"]["eta_text"] == "05:08"
+    assert out["burn"]["session"]["minutes_to_full"] == 60
+
+
+def test_a_forecast_landing_exactly_on_the_reset_is_dropped(tmp_path):
+    # The window empties at the reset rather than filling, so the boundary
+    # belongs to "cannot happen".
+    minutes = (_RESET_SOON_EPOCH - _NOW) / 60.0
+    out = api.public_state(_burn_payload(session_minutes=minutes), tmp_path)
+    assert out["burn"]["session"]["eta_text"] == ""
+
+
+def test_one_second_before_the_reset_still_shows(tmp_path):
+    minutes = (_RESET_SOON_EPOCH - _NOW - 1.0) / 60.0
+    out = api.public_state(_burn_payload(session_minutes=minutes), tmp_path)
+    assert out["burn"]["session"]["eta_text"] == "05:08"
+
+
+def test_each_window_is_judged_against_its_own_reset(tmp_path):
+    """The real payload: session unreachable, weekly genuinely reachable.
+
+    Judging both against one reset -- or dropping the whole burn block when any
+    forecast is impossible -- would silently lose the weekly forecast.
+    """
+    out = api.public_state(
+        _burn_payload(session_minutes=626, weekly_minutes=1028), tmp_path
+    )
+    assert out["burn"]["session"]["eta_text"] == ""
+    assert out["burn"]["weekly"]["eta_text"] == "11:50"
+    assert out["burn"]["weekly"]["minutes_to_full"] == 1028
+
+
+def test_a_flat_rate_forecast_is_left_alone(tmp_path):
+    # The engine already emits rate-with-no-ETA when the slope is flat.
+    payload = _burn_payload()
+    payload["burn"] = {
+        "session": {"rate_per_minute": 0.0, "minutes_to_full": None, "eta_text": ""}
+    }
+    out = api.public_state(payload, tmp_path)
+    assert out["burn"]["session"] == {
+        "rate_per_minute": 0.0,
+        "minutes_to_full": None,
+        "eta_text": "",
+    }
+
+
+def test_without_updated_at_the_forecast_is_not_second_guessed(tmp_path):
+    # minutes_to_full cannot be placed on a timeline without the instant it was
+    # measured from. Guessing with now() would suppress real forecasts whenever
+    # the state file is stale.
+    payload = _burn_payload(session_minutes=626)
+    del payload["updated_at"]
+    out = api.public_state(payload, tmp_path)
+    assert out["burn"]["session"]["eta_text"] == "05:08"
+
+
+@pytest.mark.parametrize("bad", ["", "not a date", "2026-13-45T99:00:00+00:00", None, 12345])
+def test_an_unusable_reset_time_does_not_suppress_the_forecast(bad, tmp_path):
+    payload = _burn_payload(session_minutes=626)
+    payload["limits"]["session"]["resets_at"] = bad
+    out = api.public_state(payload, tmp_path)
+    assert out["burn"]["session"]["eta_text"] == "05:08"
+
+
+def test_a_window_with_no_limits_entry_is_left_alone(tmp_path):
+    payload = _burn_payload(session_minutes=626)
+    del payload["limits"]["session"]
+    out = api.public_state(payload, tmp_path)
+    assert out["burn"]["session"]["eta_text"] == "05:08"
+
+
+def test_a_missing_burn_or_limits_block_is_not_an_error(tmp_path):
+    api.public_state({"updated_at": _NOW, "limits": {}}, tmp_path)
+    api.public_state({"updated_at": _NOW, "burn": {}}, tmp_path)
+    api.public_state({"burn": None, "limits": None}, tmp_path)
+
+
+def test_the_callers_payload_is_never_mutated(tmp_path):
+    import copy as _copy
+    payload = _burn_payload(session_minutes=626)
+    original = _copy.deepcopy(payload)
+    api.public_state(payload, tmp_path)
+    assert payload == original
