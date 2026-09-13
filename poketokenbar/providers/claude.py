@@ -206,6 +206,18 @@ class ClaudeProvider:
         day = today or _date.today().strftime("%Y-%m-%d")
         return aggregate.periods(self.scan_entries(), day)
 
+    def fetch_snapshot(self, today: str | None = None) -> tuple[DailyUsage | None, dict]:
+        """Today's totals and the period totals from ONE scan.
+
+        Separate fetch_daily/fetch_periods calls scanned the logs twice per
+        poll, and worse, read them at two different instants -- a file appended
+        in between made today's number disagree with its own bar in the monthly
+        chart.
+        """
+        day = today or _date.today().strftime("%Y-%m-%d")
+        entries = self.scan_entries()
+        return aggregate.daily(entries, day), aggregate.periods(entries, day)
+
     def fetch_enrichment(self) -> ProviderEnrichment:
         # Blocks/burn-rate remain unported; the *_ok flags stay false so callers
         # keep their previous values rather than zeroing.

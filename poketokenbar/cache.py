@@ -40,6 +40,7 @@ def _encode(entries: list[Entry]) -> str:
                 "output": e.output,
                 "cache_write": e.cache_write,
                 "cache_read": e.cache_read,
+                "cost_unknown": e.cost_unknown,
             }
             for e in entries
         ]
@@ -57,6 +58,9 @@ def _decode(raw: str) -> list[Entry]:
             output=d["output"],
             cache_write=d["cache_write"],
             cache_read=d["cache_read"],
+            # Absent in blobs written before the field existed; those entries
+            # had a real breakdown, so False is the right reading.
+            cost_unknown=bool(d.get("cost_unknown", False)),
         )
         for d in json.loads(raw)
     ]

@@ -11,7 +11,7 @@ import random
 
 from poketokenbar import balance, shop
 from poketokenbar.balance import Rarity
-from poketokenbar.companion import EvoLine, apply_usage
+from poketokenbar.companion import EvoLine, apply_usage, graduate
 from poketokenbar.companion_store import CompanionStore
 
 
@@ -175,3 +175,59 @@ def test_an_old_save_without_the_field_reads_as_graduated(tmp_path):
     state = save.decode(raw)
     assert len(state.dex) == 1
     assert state.dex[0].is_released is False
+
+
+# --- a revealed Ditto must not vanish on the way out (review finding) --------
+
+
+def _revealed_ditto(tmp_path):
+    store = _hatched(tmp_path)
+    mon = store.state.active
+    mon.ditto_disguise = mon.base_id
+    mon.ditto_revealed = True
+    return store, mon
+
+
+def test_a_revealed_ditto_stays_in_the_dex_after_release(tmp_path):
+    """The reveal does not rewrite path_ids, so the exit records were built
+    from the disguise's line alone and the Ditto disappeared the moment it was
+    let go -- the one thing the collection screen promises cannot happen."""
+    store, _ = _revealed_ditto(tmp_path)
+    assert balance.DITTO_SPECIES_ID in [r["species_id"] for r in store.dex_payload()]
+
+    store.state.used_since_install = balance.FRESH_EGG_PRICE
+    store.state.spent_tokens = 0
+    shop.buy(store.state, "egg")
+
+    assert balance.DITTO_SPECIES_ID in [r["species_id"] for r in store.dex_payload()]
+
+
+def test_a_revealed_ditto_stays_in_the_dex_after_graduation(tmp_path):
+    store, mon = _revealed_ditto(tmp_path)
+    mon.stage_index = len(mon.path_ids) - 1
+    entry = graduate(store.state, mon)
+
+    assert balance.DITTO_SPECIES_ID in entry.chain_order
+    assert balance.DITTO_SPECIES_ID in [r["species_id"] for r in store.dex_payload()]
+
+
+def test_a_graduated_entrys_final_form_is_always_in_its_own_chain(tmp_path):
+    """final_id named a species chain_order did not contain, so anything
+    folding the chain lost the creature the record was actually about."""
+    store, mon = _revealed_ditto(tmp_path)
+    mon.stage_index = len(mon.path_ids) - 1
+    entry = graduate(store.state, mon)
+    assert entry.final_id in entry.chain_order
+
+
+def test_the_dex_never_shrinks_across_a_release(tmp_path):
+    """The property the whole change exists to establish, asserted directly."""
+    store = _hatched(tmp_path)
+    apply_usage(store.state, balance.phase_threshold(Rarity.COMMON, 3, 0), rng=random.Random(6))
+    before = {row["species_id"] for row in store.dex_payload()}
+
+    store.state.used_since_install = balance.FRESH_EGG_PRICE
+    store.state.spent_tokens = 0
+    shop.buy(store.state, "egg")
+
+    assert before <= {row["species_id"] for row in store.dex_payload()}

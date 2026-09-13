@@ -8,3 +8,6 @@ dependencies = ["apprise==1.12.0"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "network: test genuinely needs the internet (exempt from the outbound-HTTP guard)",
+]

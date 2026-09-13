@@ -284,8 +284,8 @@ def test_an_already_migrated_save_is_not_backed_up(tmp_path):
     assert not (tmp_path / f"companion{save.LEGACY_BACKUP_SUFFIX}").exists()
 
 
-def test_an_imported_rogue_profile_is_clamped_on_load():
-    raw = {
+def _mon_with_profile(profile: dict) -> dict:
+    return {
         "active": {
             "base_id": 1,
             "path_ids": [1],
@@ -293,9 +293,39 @@ def test_an_imported_rogue_profile_is_clamped_on_load():
             "stage_index": 0,
             "rarity": "common",
             "total_forms": 1,
-            "profile": {"ivs": {"hp": 9999}, "gender": "???", "species_id": 1},
+            "profile": profile,
         }
     }
-    state = save.decode(raw)
+
+
+def test_an_imported_rogue_profile_is_clamped_on_load():
+    rogue = {key: 9999 for key in profile_mod.STAT_KEYS}
+    rogue["attack"] = -5
+    state = save.decode(
+        _mon_with_profile({"ivs": rogue, "gender": "???", "species_id": 1})
+    )
     assert state.active.profile.ivs["hp"] == 31
+    assert state.active.profile.ivs["attack"] == 0
     assert state.active.profile.gender == "genderless"
+
+
+def test_a_partly_unreadable_profile_is_unknown_rather_than_all_zero():
+    """clamp() backfills a missing stat with 0, so keeping a half-readable
+    spread would render a genuine-looking 0-IV creature. Inventing an
+    individual is worse than admitting it is unknown, and once invented the
+    two are indistinguishable."""
+    for broken in (
+        {"hp": 31},  # five stats missing
+        {**{key: 20 for key in profile_mod.STAT_KEYS}, "speed": "31"},  # one a string
+        {**{key: 20 for key in profile_mod.STAT_KEYS}, "speed": 20.5},  # one a float
+        {**{key: 20 for key in profile_mod.STAT_KEYS}, "speed": True},  # bool is an int
+    ):
+        state = save.decode(_mon_with_profile({"ivs": broken, "species_id": 1}))
+        assert state.active.profile is None, broken
+
+
+def test_a_complete_readable_spread_still_loads():
+    good = {key: 20 for key in profile_mod.STAT_KEYS}
+    state = save.decode(_mon_with_profile({"ivs": good, "species_id": 1}))
+    assert state.active.profile is not None
+    assert state.active.profile.ivs == good

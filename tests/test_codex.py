@@ -109,6 +109,6 @@ def test_fork_replay_phantom_contributes_nothing():
     whole-file totals above.
     """
     entries = parse_rollout(FORK / "child.jsonl").entries
-    phantom = [e for e in entries if e.id.endswith("|6742")]
+    phantom = [e for e in entries if e.id.endswith("0,0,0,6742")]
     assert len(phantom) == 1, "the zero-context turn must still exist as an entry"
     assert phantom[0].total == 0

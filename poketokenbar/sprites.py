@@ -8,9 +8,22 @@ directly, so here the job is only to put a file on disk and hand back its path.
 
 from __future__ import annotations
 
+import os
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+
+def _temp_name(target: Path) -> Path:
+    """A temp path no other writer can be using.
+
+    A fixed "<target>.tmp" is not safe here any more: the web thread downloads
+    sprites for the detail page into the same directory the poll thread writes.
+    Whoever renames first moves the inode away and the other raises
+    FileNotFoundError -- which on the poll thread costs the whole poll.
+    """
+    return target.with_name(f"{target.name}.{os.getpid()}.{time.time_ns()}.tmp")
 
 SPRITE_BASE = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon"
 ITEM_BASE = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items"
@@ -55,7 +68,7 @@ class SpriteStore:
             return None
         if not data:
             return None
-        tmp = target.with_suffix(".png.tmp")
+        tmp = _temp_name(target)
         tmp.write_bytes(data)
         tmp.replace(target)
         return target
@@ -86,7 +99,7 @@ class SpriteStore:
         if not data:
             return None
 
-        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp = _temp_name(target)
         tmp.write_bytes(data)
         tmp.replace(target)  # atomic — a crash must not leave a torn sprite
         return target

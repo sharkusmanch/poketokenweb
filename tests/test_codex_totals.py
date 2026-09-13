@@ -310,3 +310,183 @@ def test_codex_now_reports_periods(tmp_path):
     result = provider.fetch_periods(today="2026-09-30")
     assert result["month"]["tokens"] == pytest.approx(1000)
     assert sum(row["tokens"] for row in result["month_daily"]) == 1000
+
+
+# --- dedup identity and ordering (review findings) --------------------------
+
+
+def _turn(ts: str, cum_in: int, cum_out: int, last_in: int, last_out: int) -> str:
+    return _event(
+        ts,
+        _vector(input_=last_in, output=last_out, total=last_in + last_out),
+        _vector(input_=cum_in, output=cum_out, total=cum_in + cum_out),
+    )
+
+
+def test_archiving_a_forked_sessions_parent_keeps_its_usage_on_its_own_day(tmp_path):
+    """A fork replays the parent's turns carrying the FORK's timestamps. Keeping
+    whichever copy was scanned first made the answer depend on directory order,
+    and adding archived_sessions as a second root changed that order."""
+    parent = [_meta("p"), _turn("2026-07-13T10:00:00.000Z", 1000, 100, 1000, 100)]
+    # The fork replays that turn with its own timestamp, then adds one.
+    child = [
+        _meta("c"),
+        _turn("2026-07-28T09:00:00.000Z", 1000, 100, 1000, 100),
+        _turn("2026-07-28T09:05:00.000Z", 1500, 150, 500, 50),
+    ]
+
+    _rollout(tmp_path / ".codex" / "sessions", "rollout-parent.jsonl", parent)
+    _rollout(tmp_path / ".codex" / "sessions", "rollout-child.jsonl", child)
+    live = CodexProvider(home=tmp_path).scan_entries()
+    by_day_live = {}
+    for entry in live:
+        by_day_live[entry.local_day] = by_day_live.get(entry.local_day, 0) + entry.total
+
+    # Now archive the parent; the fork stays live.
+    (tmp_path / ".codex" / "archived_sessions").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".codex" / "sessions" / "rollout-parent.jsonl").rename(
+        tmp_path / ".codex" / "archived_sessions" / "rollout-parent.jsonl"
+    )
+    archived = CodexProvider(home=tmp_path).scan_entries()
+    by_day_archived = {}
+    for entry in archived:
+        by_day_archived[entry.local_day] = by_day_archived.get(entry.local_day, 0) + entry.total
+
+    assert by_day_live == by_day_archived, "archiving must not move tokens between days"
+    assert sum(by_day_archived.values()) == 1100 + 550
+
+
+def test_two_sessions_of_the_same_size_but_different_shape_both_count(tmp_path):
+    """For the FIRST turn of every session cumulative == last, so keying on two
+    totals alone gave `codex|N|N`: any two sessions that opened with the same
+    number of tokens erased one another, however differently composed.
+
+    The key now carries all four components of both vectors, so only a turn
+    that matches on every one collides.
+
+    Residual and accepted: two sessions whose opening turns are identical in
+    every component really are indistinguishable from a fork replaying its
+    parent, and that is what this key exists to collapse. Telling them apart
+    needs the parent-closure resolution the Swift reader has and this port does
+    not; the failure mode chosen here loses one duplicate-looking session
+    rather than double-counting every fork, which is both commoner and larger.
+    """
+    _rollout(
+        tmp_path / ".codex" / "sessions",
+        "rollout-0.jsonl",
+        [_meta("s0"), _turn("2026-09-04T01:00:00.000Z", 900, 100, 900, 100)],
+    )
+    _rollout(
+        tmp_path / ".codex" / "sessions",
+        "rollout-1.jsonl",
+        [_meta("s1"), _turn("2026-09-05T01:00:00.000Z", 800, 200, 800, 200)],
+    )
+    entries = CodexProvider(home=tmp_path).scan_entries()
+    assert len(entries) == 2
+    assert sum(e.total for e in entries) == 2000
+
+
+def test_turns_without_a_cumulative_do_not_collapse_onto_each_other(tmp_path):
+    """With no cumulative there is nothing replay-stable to key on, so every
+    such turn keyed to `codex|0|<delta>` and same-sized turns merged."""
+    _rollout(
+        tmp_path / ".codex" / "sessions",
+        "rollout-nocum.jsonl",
+        [
+            _meta("nc"),
+            _event("2026-09-04T01:00:00.000Z", _vector(input_=9_000, output=1_000, total=10_000)),
+            _event("2026-09-04T01:01:00.000Z", _vector(input_=10_350, output=1_150, total=11_500)),
+            _event("2026-09-04T01:02:00.000Z", _vector(input_=9_000, output=1_000, total=10_000)),
+        ],
+    )
+    entries = CodexProvider(home=tmp_path).scan_entries()
+    assert sum(e.total for e in entries) == 31_500
+
+
+def test_a_stale_cumulative_does_not_credit_an_earlier_turn_twice(tmp_path):
+    """prior_cumulative is only refreshed by events that HAVE a cumulative. An
+    intervening event without one already contributed its components, and that
+    growth is inside the next cumulative -- comparing against the stale value
+    credited it again."""
+    _rollout(
+        tmp_path / ".codex" / "sessions",
+        "rollout-stale.jsonl",
+        [
+            _meta("stale"),
+            _turn("2026-09-04T01:00:00.000Z", 1_000, 100, 1_000, 100),
+            # No cumulative on this one; its 5,200 counts from components.
+            _event("2026-09-04T01:01:00.000Z", _vector(input_=4_700, output=500, total=5_200)),
+            # Component-empty orphan. The cumulative grew only because of the
+            # turn above, so this must NOT be counted.
+            _event(
+                "2026-09-04T01:02:00.000Z",
+                _vector(total=5_200),
+                _vector(input_=5_700, output=600, total=6_300),
+            ),
+        ],
+    )
+    entries = CodexProvider(home=tmp_path).scan_entries()
+    assert sum(e.total for e in entries) == 6_300
+
+
+# --- cost provenance of a total-only turn -----------------------------------
+
+
+def test_a_total_only_turn_is_counted_but_not_priced(tmp_path):
+    """The token COUNT is trustworthy; the split is not. Parking the whole
+    total in `input` and pricing it as input overstates a realistic Codex turn
+    about 2.4x, because a real one is mostly cache read."""
+    path = _rollout(
+        tmp_path,
+        "rollout-unpriced.jsonl",
+        [_meta(), _event("2026-09-04T01:29:58.417Z", _vector(total=51_293), _vector(total=51_293))],
+    )
+    entry = parse_rollout(path).entries[0]
+    assert entry.total == 51_293
+    assert entry.cost_unknown is True
+
+
+def test_a_turn_with_a_real_breakdown_is_priced_normally(tmp_path):
+    path = _rollout(
+        tmp_path,
+        "rollout-priced.jsonl",
+        [
+            _meta(),
+            _event(
+                "2026-09-04T01:00:00.000Z",
+                _vector(input_=20_107, cached=2_432, output=279, total=20_107),
+                _vector(input_=20_107, cached=2_432, output=279, total=20_107),
+            ),
+        ],
+    )
+    assert parse_rollout(path).entries[0].cost_unknown is False
+
+
+def test_an_unpriceable_turn_makes_the_days_cost_partial(tmp_path):
+    from poketokenbar import aggregate
+
+    path = _rollout(
+        tmp_path,
+        "rollout-day.jsonl",
+        [_meta(), _event("2026-09-04T12:00:00.000Z", _vector(total=51_293), _vector(total=51_293))],
+    )
+    entries = parse_rollout(path).entries
+    daily = aggregate.daily(entries, entries[0].local_day)
+    assert daily.total_tokens == 51_293
+    assert daily.cost_coverage.unknown is True
+    assert daily.total_cost == 0.0
+
+
+def test_the_flag_survives_the_scan_cache(tmp_path):
+    _rollout(
+        tmp_path / ".codex" / "sessions",
+        "rollout-c.jsonl",
+        [_meta(), _event("2026-09-04T01:00:00.000Z", _vector(total=51_293), _vector(total=51_293))],
+    )
+    cache = ScanCache(tmp_path / "scan.db")
+    try:
+        CodexProvider(cache=cache, home=tmp_path).scan_entries()
+        warm = CodexProvider(cache=cache, home=tmp_path).scan_entries()
+        assert warm[0].cost_unknown is True
+    finally:
+        cache.close()

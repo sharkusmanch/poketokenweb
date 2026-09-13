@@ -17,7 +17,7 @@ from pathlib import Path
 
 from .balance import Rarity
 from .companion import CompanionState, DexEntry, MonState
-from .profile import PokemonProfile, clamp as _clamp_profile
+from .profile import STAT_KEYS, PokemonProfile, clamp as _clamp_profile
 
 
 def default_path() -> Path:
@@ -66,8 +66,15 @@ def _decode_profile(raw) -> PokemonProfile | None:
     ivs = raw.get("ivs")
     if not isinstance(ivs, dict):
         return None
+    # Every stat, and every one an int. A partially-readable spread would be
+    # backfilled with zeros by clamp() and then render as a genuine 0-IV
+    # creature -- inventing an individual is worse than admitting it is
+    # unknown, and once invented the two are indistinguishable.
+    readable = {k: v for k, v in ivs.items() if isinstance(v, int) and not isinstance(v, bool)}
+    if set(readable) != set(STAT_KEYS):
+        return None
     profile = PokemonProfile(
-        ivs={k: v for k, v in ivs.items() if isinstance(v, int)},
+        ivs=readable,
         gender=raw.get("gender") if isinstance(raw.get("gender"), str) else "genderless",
         ability=raw.get("ability") if isinstance(raw.get("ability"), str) else "",
         species_id=raw.get("species_id") if isinstance(raw.get("species_id"), int) else 0,
@@ -251,19 +258,33 @@ def encode(state: CompanionState) -> dict:
     }
 
 
-def load(path: Path | None = None) -> CompanionState:
+def load(path: Path | None = None, *, mutate: bool = True) -> CompanionState:
+    """Read the save.
+
+    This is NOT a pure read by default: it may quarantine an unreadable file
+    (renaming the user's save) and may write a one-time legacy backup.
+
+    ``mutate=False`` turns both off. Any caller that is not the single owning
+    writer must use it -- notably the web thread, where an unauthenticated GET
+    would otherwise be able to rename the live save away on a transient OSError
+    (EMFILE, EIO, a stale NFS handle). `_quarantine` needs no file descriptor,
+    so it succeeds in exactly the conditions where the read failed.
+    """
     path = path or default_path()
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return CompanionState()
     except (OSError, ValueError):
-        _quarantine(path)
+        if mutate:
+            _quarantine(path)
         return CompanionState()
     if not isinstance(raw, dict):
-        _quarantine(path)
+        if mutate:
+            _quarantine(path)
         return CompanionState()
-    _backup_legacy(path, raw)
+    if mutate:
+        _backup_legacy(path, raw)
     return decode(raw)
 
 
@@ -284,7 +305,18 @@ def _backup_legacy(path: Path, raw: dict) -> None:
     if backup.exists():
         return
     try:
-        backup.write_bytes(path.read_bytes())
+        # Serialised from the dict already in hand rather than re-read from
+        # disk: between the check above and a second read, the owning writer
+        # can persist a migrated save, and the "backup" would capture that
+        # instead -- permanently, because of the exists() guard.
+        #
+        # Written temp-then-rename like every other write here. A backup killed
+        # half-written (OOM, eviction, node reboot -- all likeliest during the
+        # startup this runs in) would otherwise leave a truncated stub that the
+        # exists() guard then makes permanent.
+        tmp = backup.with_suffix(backup.suffix + ".tmp")
+        tmp.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+        tmp.replace(backup)
     except OSError:
         pass  # a backup we cannot write must not block the app from starting
 

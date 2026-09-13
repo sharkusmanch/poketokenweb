@@ -81,24 +81,22 @@ class Daemon:
                     errors.append(f"{name}: {exc}")
 
         daily_by_provider: dict[str, DailyUsage] = {}
+        periods: dict = {}
         for provider in self.providers:
+            # One scan per provider, so today's number and its own bar in the
+            # monthly chart come from the same read of the log.
+            snapshot = getattr(provider, "fetch_snapshot", None)
             try:
-                daily = provider.fetch_daily()
+                if snapshot is not None:
+                    daily, result = snapshot()
+                else:
+                    daily, result = provider.fetch_daily(), None
             except Exception as exc:  # per-provider isolation
                 errors.append(f"{provider.id}: {exc}")
                 continue
             if daily is not None:
                 daily_by_provider[provider.id] = daily
-
-        periods: dict = {}
-        for provider in self.providers:
-            fetch_periods = getattr(provider, "fetch_periods", None)
-            if fetch_periods is None:
-                continue
-            try:
-                result = fetch_periods()
-            except Exception as exc:
-                errors.append(f"{provider.id} periods: {exc}")
+            if result is None:
                 continue
             for key in ("week", "month"):
                 aggregate.merge_period(periods.setdefault(key, {}), result.get(key) or {})
@@ -198,18 +196,38 @@ class Daemon:
             except Exception as exc:
                 errors.append(f"status: {exc}")
 
+        # Built inside their own guard. These were evaluated as arguments to
+        # state.build, which put them OUTSIDE the companion try/except above --
+        # so a raise in any of them (a sprite download losing a rename, say)
+        # escaped poll_once entirely and nothing was published at all. The
+        # companion is cosmetic; it must never cost the numbers.
+        sections: dict = {}
+        if self.companion_store is not None:
+            for name, build in (
+                ("shop_payload", self.companion_store.shop_payload),
+                ("bag_payload", self.companion_store.bag_payload),
+                ("dex_payload", self.companion_store.dex_payload),
+                ("catch_log", self.companion_store.catch_log_payload),
+                ("rarity_counts", self.companion_store.rarity_counts),
+                ("catch_counts", self.companion_store.catch_rarity_counts),
+            ):
+                try:
+                    sections[name] = build()
+                except Exception as exc:
+                    errors.append(f"companion {name}: {exc}")
+
         payload = state.build(
             daily_by_provider,
             self.config_values,
             errors,
             limit_status=limit_status,
             companion_payload=companion_payload,
-            shop_payload=self.companion_store.shop_payload() if self.companion_store else None,
-            bag_payload=self.companion_store.bag_payload() if self.companion_store else None,
-            dex_payload=self.companion_store.dex_payload() if self.companion_store else None,
-            catch_log=self.companion_store.catch_log_payload() if self.companion_store else None,
-            rarity_counts=self.companion_store.rarity_counts() if self.companion_store else None,
-            catch_counts=self.companion_store.catch_rarity_counts() if self.companion_store else None,
+            shop_payload=sections.get("shop_payload"),
+            bag_payload=sections.get("bag_payload"),
+            dex_payload=sections.get("dex_payload"),
+            catch_log=sections.get("catch_log"),
+            rarity_counts=sections.get("rarity_counts"),
+            catch_counts=sections.get("catch_counts"),
             periods=periods,
             burn=self.burn.payload() if self.burn is not None else None,
             provider_status=status_payload,
@@ -246,6 +264,10 @@ def main() -> int:
 
     cache_base = os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
     cache = ScanCache(Path(cache_base) / "poketokenbar" / "scan.db")
+    # Same reason as the web runner: the store must start at the difficulty its
+    # banked progress was earned at, or the first poll rescales from a scale
+    # that was never in effect.
+    settings = config.load(config.default_path())
     daemon = Daemon(
         state_path=state.default_path(),
         config_path=config.default_path(),
@@ -253,7 +275,10 @@ def main() -> int:
         providers=[ClaudeProvider(cache=cache), CodexProvider(cache=cache)],
         limits_source=LimitsSource(),
         companion_store=CompanionStore(
-            api=PokeAPI(), sprite_store=SpriteStore()
+            api=PokeAPI(),
+            sprite_store=SpriteStore(),
+            growth_difficulty=settings.get("growth_difficulty", 1.0),
+            shop_difficulty=settings.get("shop_difficulty", 1.0),
         ),
         notifier=Notifier(),
         burn_tracker=BurnTracker(),

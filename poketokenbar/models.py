@@ -18,6 +18,11 @@ class Entry:
     output: int = 0
     cache_write: int = 0
     cache_read: int = 0
+    # The token COUNT is trustworthy but the split across input/output/cache is
+    # not, so no rate card can price it. Set by the Codex total-only path,
+    # where the whole amount is parked in `input` for want of a breakdown --
+    # pricing that as 100% input overstates a realistic turn ~2.4x.
+    cost_unknown: bool = False
 
     @property
     def total(self) -> int:

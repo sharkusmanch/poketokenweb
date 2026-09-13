@@ -32,6 +32,7 @@ import threading
 import time
 from typing import Callable
 
+from poketokenbar import config
 from poketokenbar.burn import BurnTracker
 from poketokenbar.cache import ScanCache
 from poketokenbar.companion_store import CompanionStore
@@ -103,6 +104,12 @@ def build_daemon(paths: Paths) -> tuple[Daemon, ScanCache]:
                 "ignoring it. Inside a container this must be the CONTAINER path, "
                 "not the host path."
             )
+    # Read once, here, so the store starts at the SAME difficulty its banked
+    # progress was earned at. Constructing at the default and letting the first
+    # poll push the real value in makes that poll rescale from a scale that was
+    # never in effect -- and since difficulty is deliberately not in the save,
+    # the true old value is unrecoverable, so it compounds on every restart.
+    settings = config.load(paths.config_file)
     daemon = Daemon(
         state_path=paths.state_file,
         config_path=paths.config_file,
@@ -122,6 +129,8 @@ def build_daemon(paths: Paths) -> tuple[Daemon, ScanCache]:
             # read-only mount here — the explicit cache_dir is not optional.
             api=PokeAPI(cache_dir=paths.cache_dir),
             sprite_store=SpriteStore(cache_dir=paths.cache_dir),
+            growth_difficulty=settings.get("growth_difficulty", 1.0),
+            shop_difficulty=settings.get("shop_difficulty", 1.0),
         ),
         # The engine notifier shells out to `notify-send`, which does not exist
         # in a container. Our pushes go out through the Apprise Notifier below.

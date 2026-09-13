@@ -85,7 +85,11 @@ class MonState:
             return balance.DITTO_SPECIES_ID
         if not self.path_ids:
             return self.base_id
-        return self.path_ids[min(self.stage_index, len(self.path_ids) - 1)]
+        # Clamped at BOTH ends. A negative stage_index from a damaged save
+        # indexes from the back of the list and can raise IndexError outright,
+        # and this property is read on every render.
+        index = min(max(0, self.stage_index), len(self.path_ids) - 1)
+        return self.path_ids[index]
 
     @property
     def is_final_form(self) -> bool:
@@ -321,10 +325,11 @@ def graduate(state: CompanionState, mon: MonState, now: float | None = None) -> 
     import time as _time
 
     now = _time.time() if now is None else now
+    reached = reached_species(mon)
     entry = DexEntry(
         base_id=mon.base_id,
-        final_id=mon.current_id,
-        chain_order=list(mon.path_ids),
+        final_id=reached[-1],
+        chain_order=reached,
         rarity=mon.rarity,
         is_shiny=mon.is_shiny,
         nature=mon.nature,
@@ -338,6 +343,27 @@ def graduate(state: CompanionState, mon: MonState, now: float | None = None) -> 
     state.active = None
     state.egg_usage = 0
     return entry
+
+
+def reached_species(mon: MonState) -> list[int]:
+    """Every species this individual has actually BEEN, in order.
+
+    Not ``planned_path_ids``: that contains stages it never evolved into, and
+    crediting them would make buying an egg a shortcut to filling the Pokedex.
+
+    A revealed Ditto is appended because the reveal does not rewrite
+    ``path_ids`` -- the path still holds the line it was pretending to be. Its
+    exit records were missing it entirely, so the Ditto you owned vanished from
+    the collection the moment it graduated or was released. That is the one
+    thing this screen promises cannot happen.
+
+    Falls back to ``base_id`` for a damaged save whose ``stage_index`` is out
+    of range, matching ``MonState.current_id``'s attitude.
+    """
+    reached = list(mon.path_ids[: max(1, mon.stage_index + 1)]) or [mon.base_id]
+    if mon.current_id not in reached:
+        reached.append(mon.current_id)
+    return reached
 
 
 def release(
@@ -365,7 +391,7 @@ def release(
     import time as _time
 
     now = _time.time() if now is None else now
-    reached = list(mon.path_ids[: max(1, mon.stage_index + 1)]) or [mon.base_id]
+    reached = reached_species(mon)
     entry = DexEntry(
         base_id=mon.base_id,
         final_id=reached[-1],
@@ -390,6 +416,7 @@ def apply_usage(
     line_for_egg=None,
     rng: random.Random | None = None,
     growth_difficulty: float = 1.0,
+    counts_as_earned: bool = True,
 ) -> GrowthEvents:
     """Feed tokens to the companion.
 
@@ -401,7 +428,13 @@ def apply_usage(
         return events
     rng = rng or random.Random()
 
-    state.used_since_install += tokens
+    if counts_as_earned:
+        # used_since_install is BOTH the growth meter and the wallet basis
+        # (spendable = used_since_install - spent_tokens). Injected XP must not
+        # touch it: a Rare Candy that credited its own 100M refunded a fifth of
+        # its price, and once shop prices became adjustable, any multiplier
+        # below 0.2 made buy-then-use a net-positive loop -- a token printer.
+        state.used_since_install += tokens
 
     # --- egg ---
     if state.active is None:

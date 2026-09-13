@@ -10,6 +10,8 @@ tokens in the egg and hatches later — progress is never discarded.
 from __future__ import annotations
 
 import json
+import os
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -50,6 +52,22 @@ class PokeAPIError(Exception):
 class BaseSpecies:
     id: int
     capture_rate: int
+
+
+def _write_atomically(target: Path, text: str) -> None:
+    """Write via a uniquely-named temp, then rename.
+
+    Both the poll thread and the web thread fill these caches now, so a
+    same-named temp would let one writer rename the other's file away, and a
+    direct write would let a reader see a half-written document.
+    """
+    tmp = target.with_name(f"{target.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(target)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _get_json(url: str, timeout: float = 15.0):
@@ -139,7 +157,7 @@ class PokeAPI:
                 pass
         data = _get_json(f"{REST_BASE}/pokemon-species/{species_id}")
         cached.parent.mkdir(parents=True, exist_ok=True)
-        cached.write_text(json.dumps(data), encoding="utf-8")
+        _write_atomically(cached, json.dumps(data))
         self._species[species_id] = data
         return data
 
@@ -164,7 +182,10 @@ class PokeAPI:
         if cached.is_file():
             try:
                 return json.loads(cached.read_text(encoding="utf-8"))
-            except ValueError:
+            except (OSError, ValueError):
+                # OSError too, not just ValueError: the endpoint switch wipes
+                # this directory wholesale, so the file can vanish between the
+                # is_file() check and the read.
                 pass  # refetch below
 
         raw = _get_json(f"{REST_BASE}/pokemon/{species_id}")
@@ -179,9 +200,7 @@ class PokeAPI:
         distilled = _distil_pokemon(raw, species_id, gender_rate)
         try:
             cached.parent.mkdir(parents=True, exist_ok=True)
-            tmp = cached.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(distilled), encoding="utf-8")
-            tmp.replace(cached)
+            _write_atomically(cached, json.dumps(distilled))
         except OSError:
             pass  # a cache we cannot write is not a reason to fail the request
         return distilled

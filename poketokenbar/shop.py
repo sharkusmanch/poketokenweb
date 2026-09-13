@@ -155,7 +155,13 @@ def use_item(
         # Routed through apply_usage so carry-over, evolution, and graduation
         # all behave exactly as they do for real usage.
         companion.apply_usage(
-            state, balance.RARE_CANDY_XP, rng=rng, growth_difficulty=growth_difficulty
+            state,
+            balance.RARE_CANDY_XP,
+            rng=rng,
+            growth_difficulty=growth_difficulty,
+            # Growth only. Candy is bought WITH tokens; crediting its XP back
+            # to the wallet would refund part of its own price.
+            counts_as_earned=False,
         )
         return "used Rare Candy"
 

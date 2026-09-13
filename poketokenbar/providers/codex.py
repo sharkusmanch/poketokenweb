@@ -27,9 +27,11 @@ from ..cache import ScanCache
 from ..models import DailyUsage, Entry, ProviderEnrichment
 from .claude import _parse_timestamp, jsonl_files
 
-# 2: total-only turns contribute their total_tokens (#279). A cached blob
-# parsed under version 1 dropped those turns, so it must be re-read.
-PARSER_VERSION = 2
+# 3: total-only turns contribute their total_tokens (#279), entry ids carry the
+# full usage vectors rather than two totals, and a rollout with no cumulative
+# falls back to a positional id. Each changes what a blob means, so a blob
+# cached under an older version must be re-read.
+PARSER_VERSION = 3
 
 
 def _int(value) -> int:
@@ -41,6 +43,25 @@ def _components(vector: dict) -> int:
     input_total = _int(vector.get("input_tokens"))
     cached = _int(vector.get("cached_input_tokens"))
     return max(0, input_total - cached) + cached + _int(vector.get("output_tokens"))
+
+
+def _fingerprint(vector: dict) -> str:
+    """The whole usage vector, not just its total.
+
+    The entry id is built from these. Two totals alone is far too little
+    entropy: the FIRST turn of every session has `cumulative == last`, so its
+    id was `codex|N|N` -- two sessions whose opening turn happened to be the
+    same size collapsed into one and the other's tokens vanished.
+
+    Stable across a fork's replay, which is what the id has to preserve: a
+    replay copies the parent's vectors verbatim.
+    """
+    return (
+        f"{_int(vector.get('input_tokens'))},"
+        f"{_int(vector.get('cached_input_tokens'))},"
+        f"{_int(vector.get('output_tokens'))},"
+        f"{_int(vector.get('total_tokens'))}"
+    )
 
 
 def _trust_total_only(last_total: int, cumulative: dict | None, prior_total: int | None) -> bool:
@@ -84,6 +105,8 @@ def parse_rollout(path: Path) -> ParsedRollout:
     session_id: str | None = None
     model = "gpt-5.5"
     prior_cumulative: int | None = None
+    turn = 0
+    name = path.name
 
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
@@ -121,7 +144,14 @@ def parse_rollout(path: Path) -> ParsedRollout:
                 # Captured BEFORE this event updates it: the growth test asks
                 # whether the cumulative moved *because of* this turn.
                 prior = prior_cumulative
-                if cumulative is not None:
+                if cumulative is None:
+                    # Forget the previous value rather than carrying it across
+                    # the gap. An intervening event with no cumulative still
+                    # contributed its own components, and that growth is
+                    # already inside the NEXT cumulative -- comparing against
+                    # the stale value credits it a second time.
+                    prior_cumulative = None
+                else:
                     prior_cumulative = _int(cumulative.get("total_tokens"))
 
                 input_total = _int(last.get("input_tokens"))
@@ -129,14 +159,19 @@ def parse_rollout(path: Path) -> ParsedRollout:
                 output = _int(last.get("output_tokens"))
                 last_total = _int(last.get("total_tokens"))
 
+                cost_unknown = False
                 if (
                     _components(last) == 0
                     and last_total > 0
                     and _trust_total_only(last_total, cumulative, prior)
                 ):
-                    # No breakdown exists to split; attribute the whole total to
-                    # input rather than invent a cache/output division.
+                    # No breakdown exists to split, so the whole total is parked
+                    # in input to keep the token COUNT right -- but it must not
+                    # then be priced as if it really were all input. A real
+                    # Codex turn is mostly cache read, so that would overstate
+                    # the cost of these turns roughly 2.4x.
                     non_cached, output_value, cache_read = last_total, 0, 0
+                    cost_unknown = True
                 else:
                     non_cached, output_value, cache_read = (
                         max(0, input_total - cached),
@@ -144,16 +179,28 @@ def parse_rollout(path: Path) -> ParsedRollout:
                         cached,
                     )
 
+                # Keyed by the two usage VECTORS, not by file position or
+                # timestamp. A fork replays the parent's turns with fresh
+                # timestamps but identical vectors, so this collapses the
+                # copies while keeping the fork's own turns. The delta is part
+                # of the key because a fork emits a zero-delta turn repeating
+                # the parent's final cumulative.
+                #
+                # With no cumulative there is nothing replay-stable to key on,
+                # and every such turn would otherwise collapse onto
+                # `codex|0|<delta>` across the whole scan. Fall back to the
+                # file position, as the Swift reader does for the same reason:
+                # a fork of such a session double-counts, which is strictly
+                # better than unrelated sessions erasing each other.
+                if cumulative is None:
+                    entry_id = f"codex|{name}|{turn}"
+                else:
+                    entry_id = f"codex|{_fingerprint(cumulative)}|{_fingerprint(last)}"
+                turn += 1
+
                 entries.append(
                     Entry(
-                        # Keyed by (cumulative, delta), not by file position or
-                        # timestamp. A fork replays the parent's turns with
-                        # fresh timestamps but an identical cumulative
-                        # sequence, so this collapses the copies while keeping
-                        # the fork's own turns. The delta is part of the key
-                        # because a fork emits a zero-delta turn that repeats
-                        # the parent's final cumulative value.
-                        id=f"codex|{_cumulative(info)}|{last_total}",
+                        id=entry_id,
                         date=date,
                         local_day=date.astimezone().strftime("%Y-%m-%d"),
                         model=model,
@@ -161,6 +208,7 @@ def parse_rollout(path: Path) -> ParsedRollout:
                         output=output_value,
                         cache_write=0,
                         cache_read=cache_read,
+                        cost_unknown=cost_unknown,
                     )
                 )
     except OSError:
@@ -200,6 +248,21 @@ def _find_model(obj: dict) -> str | None:
     if isinstance(payload, dict):
         return _find_model(payload)
     return None
+
+
+def _keep_earliest(by_id: dict[str, Entry], entry: Entry) -> None:
+    """Collapse a replayed turn onto its ORIGINAL, whichever copy is seen first.
+
+    A fork replays its parent's turns carrying the fork's own timestamps, so
+    "keep the first one scanned" made the answer depend on directory order.
+    Adding archived_sessions as a second root changed that order, and a live
+    fork of an archived parent moved the parent's whole history onto the fork's
+    day. Keeping the earliest timestamp is order-independent and picks the
+    original, which is the one that dates the usage correctly.
+    """
+    existing = by_id.get(entry.id)
+    if existing is None or entry.date < existing.date:
+        by_id[entry.id] = entry
 
 
 def session_roots(
@@ -281,7 +344,7 @@ class CodexProvider:
                             entries,
                         )
                 for entry in entries:
-                    by_id.setdefault(entry.id, entry)
+                    _keep_earliest(by_id, entry)
         if self._cache is not None:
             self._cache.prune(self.id, live)
         return list(by_id.values())
@@ -290,7 +353,7 @@ class CodexProvider:
     def dedup(entries: list[Entry]) -> list[Entry]:
         by_id: dict[str, Entry] = {}
         for e in entries:
-            by_id.setdefault(e.id, e)
+            _keep_earliest(by_id, e)
         return list(by_id.values())
 
     def fetch_daily(self, today: str | None = None) -> DailyUsage | None:
@@ -306,6 +369,18 @@ class CodexProvider:
         """
         day = today or _date.today().strftime("%Y-%m-%d")
         return aggregate.periods(self.scan_entries(), day)
+
+    def fetch_snapshot(self, today: str | None = None) -> tuple[DailyUsage | None, dict]:
+        """Today's totals and the period totals from ONE scan.
+
+        Separate fetch_daily/fetch_periods calls scanned the logs twice per
+        poll, and worse, read them at two different instants -- a file appended
+        in between made today's number disagree with its own bar in the monthly
+        chart.
+        """
+        day = today or _date.today().strftime("%Y-%m-%d")
+        entries = self.scan_entries()
+        return aggregate.daily(entries, day), aggregate.periods(entries, day)
 
     def fetch_enrichment(self) -> ProviderEnrichment:
         return ProviderEnrichment()

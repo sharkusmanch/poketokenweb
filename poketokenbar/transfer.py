@@ -18,7 +18,12 @@ from . import save
 from .companion import CompanionState
 
 FORMAT = "poketokenbar.save"
-FORMAT_VERSION = 1
+# Moves with save.SCHEMA_VERSION. The "refuse the future" check below is only
+# a guard if this number tracks the payload it wraps: left at 1, an older build
+# accepted a schema-2 export and wrote it back without profiles, levels or
+# release records -- and individual values, rolled once at hatch, cannot be
+# recovered.
+FORMAT_VERSION = 2
 
 
 class TransferError(Exception):
@@ -90,9 +95,16 @@ def import_from(path: Path, target: Path | None = None) -> CompanionState:
 
     target = target or save.default_path()
     if target.is_file():
-        backup = target.with_suffix(target.suffix + ".before-import")
+        # Timestamped, not a single fixed name. "I imported the wrong file, let
+        # me try another" is the likeliest way anyone reaches this code, and a
+        # fixed name means the second import overwrites the backup of the
+        # original with a backup of the mistake.
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = target.with_suffix(f"{target.suffix}.before-import-{stamp}")
         try:
-            backup.write_bytes(target.read_bytes())
+            tmp = backup.with_suffix(backup.suffix + ".tmp")
+            tmp.write_bytes(target.read_bytes())
+            tmp.replace(backup)
         except OSError:
             pass  # a failed backup must not block the import the user asked for
 

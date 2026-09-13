@@ -89,10 +89,35 @@ def test_import_backs_up_the_previous_save(tmp_path):
     transfer.export_to(incoming, _state(dex=1, tokens=1))
     transfer.import_from(incoming, target=target)
 
-    backup = tmp_path / "companion.json.before-import"
-    assert backup.is_file()
-    assert save.load(backup).used_since_install == 999
+    backups = list(tmp_path.glob("companion.json.before-import-*"))
+    assert len(backups) == 1
+    assert save.load(backups[0]).used_since_install == 999
     assert save.load(target).used_since_install == 1
+
+
+def test_a_second_import_does_not_clobber_the_first_backup(tmp_path):
+    """"I imported the wrong file, let me try another" is the likeliest way
+    anyone reaches this code. A single fixed backup name means the second
+    import overwrites the backup of the original with a backup of the
+    mistake."""
+    import time
+
+    target = tmp_path / "companion.json"
+    save.save(_state(dex=5, tokens=999), target)
+
+    first = tmp_path / "a.json"
+    transfer.export_to(first, _state(dex=1, tokens=111))
+    transfer.import_from(first, target=target)
+    time.sleep(1.05)  # the stamp has second resolution
+
+    second = tmp_path / "b.json"
+    transfer.export_to(second, _state(dex=2, tokens=222))
+    transfer.import_from(second, target=target)
+
+    backups = sorted(tmp_path.glob("companion.json.before-import-*"))
+    assert len(backups) == 2
+    # The ORIGINAL is still recoverable, which is the whole promise.
+    assert {save.load(b).used_since_install for b in backups} == {999, 111}
 
 
 def test_summary_describes_progress_for_the_overwrite_prompt():

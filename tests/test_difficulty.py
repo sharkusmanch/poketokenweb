@@ -190,12 +190,22 @@ def test_raising_difficulty_keeps_the_share_already_earned(tmp_path):
     )
 
 
-def test_rescaling_never_completes_a_stage(tmp_path):
-    """Rounding must not evolve a companion because a slider moved."""
-    store = _store(tmp_path)
-    store.state.egg_usage = balance.EGG_HATCH_THRESHOLD - 1  # all but done
-    store.set_growth_difficulty(0.1)
-    assert store.state.egg_usage < companion.egg_threshold(0.1)
+@pytest.mark.parametrize("target", [0.1, 0.25, 0.5, 0.75, 1.5, 2.0])
+@pytest.mark.parametrize("fraction", [0.5, 0.9, 0.99, 0.999, 0.9999])
+def test_rescaling_never_completes_a_stage(tmp_path, target, fraction):
+    """Rounding must not evolve or hatch anything because a slider moved.
+
+    Swept rather than spot-checked. The proportional arithmetic already
+    guarantees this for every real threshold (credits < old implies the scaled
+    value floors below new), so the explicit clamp in rescale_banked_growth is
+    belt-and-braces; what is worth pinning is the PROPERTY, which a future
+    change to the formula could break.
+    """
+    store = _store(tmp_path / f"{target}-{fraction}")
+    store.state.egg_usage = int(balance.EGG_HATCH_THRESHOLD * fraction)
+    store.set_growth_difficulty(target)
+    assert store.state.egg_usage < companion.egg_threshold(target)
+    assert store.state.active is None
 
 
 def test_changing_difficulty_does_not_hatch(tmp_path):
@@ -233,14 +243,26 @@ def test_a_no_op_change_leaves_progress_exactly_alone(tmp_path):
 
 
 def test_an_active_companions_stage_progress_is_rescaled(tmp_path):
+    """Asserted in ABSOLUTE tokens, not as a ratio.
+
+    The ratio form could not distinguish which base was used: the rescale is
+    credits * round(base*new) / round(base*old), so the base cancels and the
+    test passed even with the EGG threshold substituted for the stage one.
+    """
     store = _store(tmp_path)
     store.update({"claude_code": balance.EGG_HATCH_THRESHOLD}, today="2026-09-13")
     mon = store.state.active
-    mon.used_at_stage = mon.phase_threshold // 2
+    stage_base = mon.phase_threshold
+    assert stage_base != balance.EGG_HATCH_THRESHOLD, "the two bases must differ"
+    mon.used_at_stage = stage_base // 2
+
     store.set_growth_difficulty(0.5)
-    assert store.state.active.used_at_stage == pytest.approx(
-        store.stage_threshold(store.state.active) // 2, rel=1e-6
-    )
+    expected = round(stage_base * 0.5) // 2
+    assert store.state.active.used_at_stage == pytest.approx(expected, abs=2)
+    # And the ratio is preserved, which is the user-visible promise.
+    assert store.state.active.used_at_stage / store.stage_threshold(
+        store.state.active
+    ) == pytest.approx(0.5, abs=0.01)
 
 
 def test_shop_difficulty_needs_no_rescale(tmp_path):
@@ -269,3 +291,62 @@ def test_difficulty_is_not_written_into_the_save(tmp_path):
     encoded = save.encode(store.state)
     assert "growth_difficulty" not in encoded
     assert "shop_difficulty" not in encoded
+
+
+# --- the economy must not be a token printer (review finding) ---------------
+
+
+def test_using_a_candy_does_not_refund_part_of_its_price(tmp_path):
+    """used_since_install is BOTH the growth meter and the wallet basis, so
+    injected XP that touched it refunded a fifth of the candy's price -- and
+    below a shop multiplier of 0.2 that made buy-then-use net positive."""
+    state = CompanionState()
+    apply_usage(state, balance.EGG_HATCH_THRESHOLD, line_for_egg=LINE, rng=random.Random(1))
+    state.used_since_install = balance.RARE_CANDY_PRICE
+    state.spent_tokens = 0
+
+    shop.buy(state, "rareCandy")
+    assert state.spendable_tokens == 0
+    shop.use_item(state, "rareCandy", rng=random.Random(1))
+    assert state.spendable_tokens == 0, "the wallet must not refill itself"
+
+
+@pytest.mark.parametrize("difficulty", [0.1, 0.15, 0.2, 1.0, 2.0])
+def test_the_candy_loop_is_never_profitable(difficulty):
+    state = CompanionState()
+    apply_usage(state, balance.EGG_HATCH_THRESHOLD, line_for_egg=LINE, rng=random.Random(1))
+    state.used_since_install = 10 * balance.RARE_CANDY_PRICE
+    state.spent_tokens = 0
+    start = state.spendable_tokens
+
+    for _ in range(20):
+        try:
+            shop.buy(state, "rareCandy", shop_difficulty=difficulty)
+            shop.use_item(state, "rareCandy", rng=random.Random(1), growth_difficulty=1.0)
+        except shop.ShopError:
+            break
+    assert state.spendable_tokens < start
+
+
+def test_free_candy_from_a_maxed_window_does_not_mint_currency():
+    state = CompanionState()
+    apply_usage(state, balance.EGG_HATCH_THRESHOLD, line_for_egg=LINE, rng=random.Random(1))
+    state.used_since_install = balance.EGG_HATCH_THRESHOLD
+    state.spent_tokens = balance.EGG_HATCH_THRESHOLD
+    shop.grant_candy(state, {"weekly": 10.0})
+    shop.grant_candy(state, {"weekly": 100.0})
+    assert state.inventory["rareCandy"] == balance.RARE_CANDY_WEEKLY_GRANT
+
+    before = state.spendable_tokens
+    for _ in range(balance.RARE_CANDY_WEEKLY_GRANT):
+        shop.use_item(state, "rareCandy", rng=random.Random(1))
+    assert state.spendable_tokens == before
+
+
+def test_candy_still_grows_the_companion():
+    state = CompanionState()
+    apply_usage(state, balance.EGG_HATCH_THRESHOLD, line_for_egg=LINE, rng=random.Random(1))
+    state.inventory["rareCandy"] = 1
+    before = state.active.used_at_stage
+    shop.use_item(state, "rareCandy", rng=random.Random(1))
+    assert state.active.used_at_stage - before == balance.RARE_CANDY_XP

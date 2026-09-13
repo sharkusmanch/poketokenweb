@@ -37,9 +37,14 @@ class CompanionStore:
         rng: random.Random | None = None,
         growth_difficulty: float = balance.DEFAULT_DIFFICULTY,
         shop_difficulty: float = balance.DEFAULT_DIFFICULTY,
+        read_only: bool = False,
     ) -> None:
         self.save_path = save_path
-        self.state: CompanionState = save.load(save_path)
+        # read_only makes "this store never touches the save" structural rather
+        # than a convention someone has to keep. The web thread builds one per
+        # request; only the poll thread owns the file.
+        self.read_only = read_only
+        self.state: CompanionState = save.load(save_path, mutate=not read_only)
         self.api = api
         self.sprites = sprite_store
         self.rng = rng or random.Random()
@@ -377,21 +382,11 @@ class CompanionStore:
     def _owned_species_of_active(self) -> list[int]:
         """Species the current companion has actually been.
 
-        The planned path is never used: it contains stages not yet evolved
-        into, which would list species that have never been owned.
-
-        A revealed Ditto is appended explicitly because the reveal does not
-        rewrite ``path_ids`` — the path still holds the disguise's line, so
-        without this the Ditto you now own would be absent from the collection
-        until it graduated.
+        One shared rule with the dex records it will eventually become, so a
+        species cannot be present while raising and absent afterwards.
         """
         mon = self.state.active
-        if mon is None:
-            return []
-        reached = list(mon.path_ids[: mon.stage_index + 1])
-        if mon.current_id not in reached:
-            reached.append(mon.current_id)
-        return reached
+        return companion.reached_species(mon) if mon is not None else []
 
     # --- per-individual detail (#264) ---------------------------------------
 
@@ -422,47 +417,61 @@ class CompanionStore:
             seed = seed * 32 + int(profile.ivs.get(key, 0))
         return seed
 
-    def _reconcile_profile(self, profile, species_id: int) -> bool:
-        """Derive gender and ability for the species this creature now IS.
+    def _reconcile_profile(self, profile, identity_id: int) -> bool:
+        """Derive gender and ability for what this creature actually IS.
 
-        Runs when they were never rolled (an offline hatch, species_id 0) or
-        when the species changed underneath them -- which is exactly what a
-        revealed Ditto does. The IVs are the individual's own and never change;
-        gender and ability belong to the species.
+        ``identity_id`` is the individual's OWN species -- the active
+        companion's current form, or the form a record ended at -- never the
+        page being viewed. Keying on the viewed species instead made one
+        creature report a different gender and ability on each form of its own
+        evolution line, which is not a thing that happens.
+
+        Runs when they were never rolled (an offline hatch leaves species_id 0)
+        or when the identity genuinely changed, which is exactly what a
+        revealed Ditto is. The IVs are the individual's own and never change.
         """
-        if profile is None or profile.species_id == species_id:
+        if profile is None or identity_id <= 0 or profile.species_id == identity_id:
             return False
-        metadata = self._species_metadata(species_id)
+        metadata = self._species_metadata(identity_id)
         if metadata is None:
             return False
-        rng = random.Random(self._profile_seed(profile, species_id))
+        rng = random.Random(self._profile_seed(profile, identity_id))
         profile.gender = profile_mod.roll_gender(rng, metadata.get("gender_rate"))
         profile.ability = profile_mod.roll_ability(rng, metadata.get("abilities") or [])
-        profile.species_id = species_id
+        profile.species_id = identity_id
         return True
 
     def _individual_for(self, species_id: int):
         """The creature to describe: the active companion, else the newest
         record that reached this species.
 
-        Returns (profile, level, nature, is_shiny) with None entries where the
+        Returns (profile, level, nature, is_shiny, identity_id). ``identity_id``
+        is what the creature IS -- its current form, or the form a record ended
+        at -- as opposed to the form being viewed. Entries are None where the
         record predates the field.
         """
         mon = self.state.active
-        if mon is not None and mon.current_id == species_id:
+        if mon is not None and species_id in companion.reached_species(mon):
             return (
                 mon.profile,
                 profile_mod.level_of(mon, self.growth_difficulty),
                 mon.nature,
                 mon.is_shiny,
+                mon.current_id,
             )
 
         for entry in sorted(
             self.state.dex, key=lambda e: e.caught_at or 0, reverse=True
         ):
             if species_id in entry.chain_order:
-                return entry.profile, entry.level, entry.nature, entry.is_shiny
-        return None, None, None, False
+                return (
+                    entry.profile,
+                    entry.level,
+                    entry.nature,
+                    entry.is_shiny,
+                    entry.final_id,
+                )
+        return None, None, None, False, 0
 
     def detail_payload(self, species_id: int) -> dict | None:
         """Everything the detail page renders, or None when species data is
@@ -475,12 +484,12 @@ class CompanionStore:
         if metadata is None:
             return None
 
-        profile, level, nature, is_shiny = self._individual_for(species_id)
+        profile, level, nature, is_shiny, identity_id = self._individual_for(species_id)
         # In memory only, deliberately. The derivation is seeded from the
         # individual's own IVs, so recomputing it is free and always gives the
         # same answer -- which means this can be served from a throwaway store
         # on the web thread without a second writer touching the save.
-        self._reconcile_profile(profile, species_id)
+        self._reconcile_profile(profile, identity_id)
 
         ivs = dict(profile.ivs) if profile is not None else {}
         sprite = ""
@@ -617,7 +626,7 @@ class CompanionStore:
                     "rarity": str(mon.rarity),
                     "nature": mon.nature,
                     "is_shiny": mon.is_shiny,
-                    "chain": self._chain(mon.path_ids[: mon.stage_index + 1], mon.is_shiny),
+                    "chain": self._chain(companion.reached_species(mon), mon.is_shiny),
                     "caught_at": mon.hatched_at,
                     "raised_text": "",
                     "raising": True,
@@ -653,4 +662,6 @@ class CompanionStore:
         return counts
 
     def _persist(self) -> None:
+        if self.read_only:
+            return
         save.save(self.state, self.save_path)

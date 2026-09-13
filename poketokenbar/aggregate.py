@@ -42,8 +42,16 @@ class Bucket:
         self.cache_write += entry.cache_write
         self.cache_read += entry.cache_read
 
-        amount = pricing.estimated_cost(
-            entry.model, entry.input, entry.output, entry.cache_write, entry.cache_read
+        amount = (
+            None
+            if entry.cost_unknown
+            else pricing.estimated_cost(
+                entry.model,
+                entry.input,
+                entry.output,
+                entry.cache_write,
+                entry.cache_read,
+            )
         )
         if amount is None:
             # A turn that used no tokens cannot be hiding money, whatever model
