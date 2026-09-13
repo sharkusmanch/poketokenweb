@@ -44,7 +44,7 @@ from poketokenbar.sprites import SpriteStore
 from poketokenbar.status import StatusChecker
 
 from . import celebration as celebration_text
-from . import claude_roots, endpoints, events, heartbeat, species
+from . import endpoints, events, heartbeat, scan_roots, species
 from .notify import Notifier
 from .paths import Paths
 
@@ -91,20 +91,29 @@ def build_daemon(paths: Paths) -> tuple[Daemon, ScanCache]:
     # Extra transcript roots are dropped silently by the engine when absent,
     # which is indistinguishable from "not configured" -- say so once instead.
     # Logged, never fatal: in a container the mount may legitimately appear late.
-    extra_roots = claude_roots.configured_roots()
-    for root in claude_roots.missing_roots(extra_roots):
-        log(
-            f"{claude_roots.PROJECT_ROOTS_ENV}: {root} is not a directory - "
-            "ignoring it. Inside a container this must be the CONTAINER path, "
-            "not the host path."
-        )
+    # One list per provider: a Codex rollout under a Claude root is not a Claude
+    # transcript, so the two parsers must never be handed the same folder.
+    configured: dict[str, list] = {}
+    for env_name in scan_roots.ROOT_ENV_NAMES:
+        roots = scan_roots.configured_roots(env_name)
+        configured[env_name] = roots
+        for root in scan_roots.missing_roots(roots):
+            log(
+                f"{env_name}: {root} is not a directory - "
+                "ignoring it. Inside a container this must be the CONTAINER path, "
+                "not the host path."
+            )
     daemon = Daemon(
         state_path=paths.state_file,
         config_path=paths.config_file,
         cache=cache,
         providers=[
-            ClaudeProvider(cache=cache, extra_roots=extra_roots),
-            CodexProvider(cache=cache),
+            ClaudeProvider(
+                cache=cache, extra_roots=configured[scan_roots.CLAUDE_ROOTS_ENV]
+            ),
+            CodexProvider(
+                cache=cache, extra_roots=configured[scan_roots.CODEX_ROOTS_ENV]
+            ),
         ],
         limits_source=LimitsSource(),
         companion_store=CompanionStore(

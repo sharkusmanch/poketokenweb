@@ -5,17 +5,43 @@ self-referential: they assert the Python port agrees with the shipped macOS
 implementation on the same bytes.
 """
 
+import os
 from pathlib import Path
 
 import pytest
 
 from poketokenbar.providers.codex import CodexProvider, parse_rollout
 
-FIXTURES = Path(__file__).resolve().parents[2] / "Tests" / "PokeTokenBarTests" / "Fixtures"
-FORK = FIXTURES / "CodexFork"
+FIXTURES_ENV = "POKETOKENBAR_SWIFT_FIXTURES"
+
+
+def _fixtures() -> Path | None:
+    """Where the upstream Swift suite's fixtures live, if they are here at all.
+
+    These tests are the only thing asserting that this port agrees with the
+    shipped macOS implementation on real bytes, so a layout that silently skips
+    them is expensive: the suite stays green while the parity claim goes
+    unchecked. One hardcoded relative path did exactly that.
+    """
+    override = os.environ.get(FIXTURES_ENV)
+    here = Path(__file__).resolve()
+    tail = Path("Tests") / "PokeTokenBarTests" / "Fixtures"
+    candidates = [
+        *( [Path(override)] if override else [] ),
+        # The Swift repo checked out as a sibling of this one.
+        here.parents[2] / "PokeTokenBar" / tail,
+        # The Swift repo checked out as this repo's parent.
+        here.parents[2] / tail,
+    ]
+    return next((path for path in candidates if path.is_dir()), None)
+
+
+FIXTURES = _fixtures()
+FORK = (FIXTURES / "CodexFork") if FIXTURES else None
 
 pytestmark = pytest.mark.skipif(
-    not FORK.is_dir(), reason="Swift fixtures not present"
+    FORK is None or not FORK.is_dir(),
+    reason=f"Swift fixtures not found; set {FIXTURES_ENV} to run the parity suite",
 )
 
 
@@ -68,3 +94,21 @@ def test_subagent_fixtures_parse_without_error():
         pytest.skip("subagent fixtures absent")
     for path in sorted(subagent.glob("*.jsonl")):
         parse_rollout(path)  # must not raise
+
+
+def test_fork_replay_phantom_contributes_nothing():
+    """The real trigger for the #279 rule, on the bytes that produced it.
+
+    child.jsonl's last-but-one event has every `last_token_usage` component at
+    0 and `total_tokens` 6742, while the cumulative vector is a full breakdown
+    that did NOT move (312_814 before and after). Those 6742 tokens were never
+    part of the session's cumulative growth.
+
+    This is the injection check for `_trust_total_only`: relax it to "always
+    trust a positive total" and this test fails by exactly 6742, as do the two
+    whole-file totals above.
+    """
+    entries = parse_rollout(FORK / "child.jsonl").entries
+    phantom = [e for e in entries if e.id.endswith("|6742")]
+    assert len(phantom) == 1, "the zero-context turn must still exist as an entry"
+    assert phantom[0].total == 0

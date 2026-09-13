@@ -11,9 +11,13 @@ import pytest
 def _isolated_claude_env(monkeypatch):
     """Keep the developer's own environment out of the suite.
 
-    Both variables widen where transcripts are discovered, so a developer who
+    Each of these widens where transcripts are discovered, so a developer who
     actually uses these features would otherwise see unrelated tests fail with
     inflated token counts.
     """
-    for var in ("CLAUDE_CONFIG_DIR", "POKETOKENWEB_CLAUDE_PROJECT_ROOTS"):
+    for var in (
+        "CLAUDE_CONFIG_DIR",
+        "POKETOKENWEB_CLAUDE_PROJECT_ROOTS",
+        "POKETOKENWEB_CODEX_SESSION_ROOTS",
+    ):
         monkeypatch.delenv(var, raising=False)

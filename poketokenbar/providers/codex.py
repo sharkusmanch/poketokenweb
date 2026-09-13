@@ -4,28 +4,72 @@ Rollout files at ~/.codex/sessions/**/rollout-*.jsonl carry
 `payload.type == "token_count"` events. Each event's `info.last_token_usage`
 is the delta for that turn, so entries are summed rather than max-reduced.
 
-Turn identity is `(file, turn index)`. A forked or resumed session copies its
-parent's events verbatim, so the same turn can appear in several files; the
-provider deduplicates on the session id it finds in the file metadata.
+Archived sessions are read too. Codex moves a finished session from
+`sessions/` to `archived_sessions/` in place, and reading only the live
+directory made a week's usage disappear the moment a session was archived
+(upstream #181).
+
+Turn identity is `(cumulative total, delta total)`. A forked or resumed session
+copies its parent's events verbatim, so the same turn appears in several files;
+that key collapses the copies while keeping the fork's own turns.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date as _date
 from pathlib import Path
 
-from .. import pricing
+from .. import aggregate
 from ..cache import ScanCache
 from ..models import DailyUsage, Entry, ProviderEnrichment
 from .claude import _parse_timestamp, jsonl_files
 
-PARSER_VERSION = 1
+# 2: total-only turns contribute their total_tokens (#279). A cached blob
+# parsed under version 1 dropped those turns, so it must be re-read.
+PARSER_VERSION = 2
 
 
 def _int(value) -> int:
     return value if isinstance(value, int) else 0
+
+
+def _components(vector: dict) -> int:
+    """Billable component sum, mirroring how an Entry is built below."""
+    input_total = _int(vector.get("input_tokens"))
+    cached = _int(vector.get("cached_input_tokens"))
+    return max(0, input_total - cached) + cached + _int(vector.get("output_tokens"))
+
+
+def _trust_total_only(last_total: int, cumulative: dict | None, prior_total: int | None) -> bool:
+    """Whether a component-empty `last_token_usage` should still be counted.
+
+    Codex sometimes emits a turn whose every component field is 0 while
+    `total_tokens` is set (~2.5% of turns, upstream #278). Neither "always
+    trust" nor "always drop" is right:
+
+    * No cumulative vector at all — the total is the only signal there is.
+    * Cumulative is itself component-empty with a positive total — same shape,
+      same reasoning.
+    * `last.total == cumulative.total` — this turn accounts for the whole
+      session, so it is the session's real usage.
+    * Cumulative grew since the previous event — the tokens are real and the
+      breakdown simply did not arrive.
+
+    Everything else is a fork's post-replay "zero-context" turn: the cumulative
+    vector has a full breakdown and is UNCHANGED, and the orphan `last.total`
+    was never part of that cumulative growth. Counting it inflates the fork.
+    """
+    if cumulative is None:
+        return True
+    cumulative_total = _int(cumulative.get("total_tokens"))
+    if _components(cumulative) == 0 and cumulative_total > 0:
+        return True
+    if cumulative_total == last_total:
+        return True
+    return prior_total is not None and cumulative_total > prior_total
 
 
 @dataclass(slots=True)
@@ -39,8 +83,7 @@ def parse_rollout(path: Path) -> ParsedRollout:
     entries: list[Entry] = []
     session_id: str | None = None
     model = "gpt-5.5"
-    turn = 0
-    name = path.name
+    prior_cumulative: int | None = None
 
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
@@ -72,8 +115,35 @@ def parse_rollout(path: Path) -> ParsedRollout:
                 if date is None:
                     continue
 
+                cumulative = info.get("total_token_usage")
+                if not isinstance(cumulative, dict):
+                    cumulative = None
+                # Captured BEFORE this event updates it: the growth test asks
+                # whether the cumulative moved *because of* this turn.
+                prior = prior_cumulative
+                if cumulative is not None:
+                    prior_cumulative = _int(cumulative.get("total_tokens"))
+
                 input_total = _int(last.get("input_tokens"))
                 cached = _int(last.get("cached_input_tokens"))
+                output = _int(last.get("output_tokens"))
+                last_total = _int(last.get("total_tokens"))
+
+                if (
+                    _components(last) == 0
+                    and last_total > 0
+                    and _trust_total_only(last_total, cumulative, prior)
+                ):
+                    # No breakdown exists to split; attribute the whole total to
+                    # input rather than invent a cache/output division.
+                    non_cached, output_value, cache_read = last_total, 0, 0
+                else:
+                    non_cached, output_value, cache_read = (
+                        max(0, input_total - cached),
+                        output,
+                        cached,
+                    )
+
                 entries.append(
                     Entry(
                         # Keyed by (cumulative, delta), not by file position or
@@ -83,17 +153,16 @@ def parse_rollout(path: Path) -> ParsedRollout:
                         # the fork's own turns. The delta is part of the key
                         # because a fork emits a zero-delta turn that repeats
                         # the parent's final cumulative value.
-                        id=f"codex|{_cumulative(info)}|{_last_total(last)}",
+                        id=f"codex|{_cumulative(info)}|{last_total}",
                         date=date,
                         local_day=date.astimezone().strftime("%Y-%m-%d"),
                         model=model,
-                        input=max(0, input_total - cached),
-                        output=_int(last.get("output_tokens")),
+                        input=non_cached,
+                        output=output_value,
                         cache_write=0,
-                        cache_read=cached,
+                        cache_read=cache_read,
                     )
                 )
-                turn += 1
     except OSError:
         return ParsedRollout([], None)
 
@@ -103,10 +172,6 @@ def parse_rollout(path: Path) -> ParsedRollout:
 def _cumulative(info: dict) -> int:
     total = info.get("total_token_usage")
     return _int(total.get("total_tokens")) if isinstance(total, dict) else 0
-
-
-def _last_total(last: dict) -> int:
-    return _int(last.get("total_tokens"))
 
 
 def _load(line: str):
@@ -137,10 +202,33 @@ def _find_model(obj: dict) -> str | None:
     return None
 
 
-def session_roots(home: Path | None = None) -> list[Path]:
+def session_roots(
+    home: Path | None = None, extra: Iterable[Path] | None = None
+) -> list[Path]:
+    """Existing Codex rollout roots, symlink-deduplicated.
+
+    `archived_sessions` is a sibling of `sessions`, not a child, so a recursive
+    walk of `sessions` never reaches it. Omitting it silently dropped every
+    archived session's usage from the totals.
+    """
     home = home or Path.home()
-    root = home / ".codex" / "sessions"
-    return [root] if root.is_dir() else []
+    candidates = [
+        home / ".codex" / "sessions",
+        home / ".codex" / "archived_sessions",
+        *(extra or ()),
+    ]
+
+    seen: set[Path] = set()
+    roots: list[Path] = []
+    for path in candidates:
+        if not path.is_dir():
+            continue
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        roots.append(path)
+    return roots
 
 
 class CodexProvider:
@@ -149,16 +237,53 @@ class CodexProvider:
     reports_cost = True
     PARSER_VERSION = PARSER_VERSION
 
-    def __init__(self, cache: ScanCache | None = None, home: Path | None = None) -> None:
+    def __init__(
+        self,
+        cache: ScanCache | None = None,
+        home: Path | None = None,
+        extra_roots: Iterable[Path] | None = None,
+    ) -> None:
         self._cache = cache
         self._home = home
+        self._extra_roots = list(extra_roots or ())
 
     def scan_entries(self) -> list[Entry]:
+        """Every parsed entry across all roots, globally deduplicated.
+
+        Cached per file on (mtime, size, parser version), as the Claude provider
+        is. Without this a rollout is re-read on every poll, and archived
+        sessions made that permanently more expensive: an archived file never
+        changes again, so re-parsing it is pure waste for the life of the pod.
+        """
         by_id: dict[str, Entry] = {}
-        for root in session_roots(self._home):
+        live: set[str] = set()
+        for root in session_roots(self._home, extra=self._extra_roots):
             for path in sorted(jsonl_files(root)):
-                for entry in parse_rollout(path).entries:
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                live.add(str(path))
+                entries = None
+                if self._cache is not None:
+                    entries = self._cache.get(
+                        self.id, path, stat.st_mtime, stat.st_size, self.PARSER_VERSION
+                    )
+                if entries is None:
+                    entries = parse_rollout(path).entries
+                    if self._cache is not None:
+                        self._cache.put(
+                            self.id,
+                            path,
+                            stat.st_mtime,
+                            stat.st_size,
+                            self.PARSER_VERSION,
+                            entries,
+                        )
+                for entry in entries:
                     by_id.setdefault(entry.id, entry)
+        if self._cache is not None:
+            self._cache.prune(self.id, live)
         return list(by_id.values())
 
     @staticmethod
@@ -170,25 +295,17 @@ class CodexProvider:
 
     def fetch_daily(self, today: str | None = None) -> DailyUsage | None:
         day = today or _date.today().strftime("%Y-%m-%d")
-        entries = [e for e in self.scan_entries() if e.local_day == day]
-        if not entries:
-            return None
-        daily = DailyUsage(date=day)
-        for e in entries:
-            daily.input_tokens += e.input
-            daily.output_tokens += e.output
-            daily.cache_creation_tokens += e.cache_write
-            daily.cache_read_tokens += e.cache_read
-            daily.total_cost += pricing.cost(
-                e.model, e.input, e.output, e.cache_write, e.cache_read
-            )
-        daily.total_tokens = (
-            daily.input_tokens
-            + daily.output_tokens
-            + daily.cache_creation_tokens
-            + daily.cache_read_tokens
-        )
-        return daily
+        return aggregate.daily(self.scan_entries(), day)
+
+    def fetch_periods(self, today: str | None = None) -> dict:
+        """Week-to-date, month-to-date, and this month's daily series.
+
+        This provider had no ``fetch_periods`` at all, and the daemon skips a
+        provider that lacks it — so Codex tokens appeared in today's total but
+        were absent from every week and month figure.
+        """
+        day = today or _date.today().strftime("%Y-%m-%d")
+        return aggregate.periods(self.scan_entries(), day)
 
     def fetch_enrichment(self) -> ProviderEnrichment:
         return ProviderEnrichment()
