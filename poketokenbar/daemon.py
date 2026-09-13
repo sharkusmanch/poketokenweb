@@ -6,7 +6,7 @@ import os
 import time
 from pathlib import Path
 
-from . import commands, config, state
+from . import aggregate, commands, config, state
 from .companion_store import CompanionStore
 from .burn import BurnTracker
 from .notify import Notifier
@@ -101,9 +101,15 @@ class Daemon:
                 errors.append(f"{provider.id} periods: {exc}")
                 continue
             for key in ("week", "month"):
-                bucket = periods.setdefault(key, {"tokens": 0, "cost": 0.0})
-                bucket["tokens"] += result[key]["tokens"]
-                bucket["cost"] += result[key]["cost"]
+                aggregate.merge_period(periods.setdefault(key, {}), result.get(key) or {})
+            # Summed onto the union of the providers' date axes, so a provider
+            # whose scan straddled midnight cannot truncate everyone else's
+            # last day.
+            series = result.get("month_daily")
+            if series:
+                periods["month_daily"] = aggregate.merge_month_daily(
+                    periods.get("month_daily") or [], series
+                )
 
         limit_status = None
         if self.limits_source is not None:

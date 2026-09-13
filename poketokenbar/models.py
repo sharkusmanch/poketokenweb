@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -25,6 +25,44 @@ class Entry:
 
 
 @dataclass(slots=True)
+class CostCoverage:
+    """Where a cost total came from — ports CostCoverage.swift.
+
+    Provenance, not accuracy. A total can be complete and still be an estimate,
+    and it can carry real money and still be missing some.
+
+    ``unknown`` is the field that earns this type its existence: without it, a
+    day containing one unpriced model renders ``$0.00`` for that model's share
+    and the sum looks authoritative. ``$0.00`` reads as "this was free";
+    "unknown" reads as "we could not price it". They are different claims.
+    """
+
+    # The source told us the amount. No provider in this fork does; kept so the
+    # vocabulary matches upstream if one ever arrives.
+    reported: bool = False
+    # Computed from the local rate table.
+    estimated: bool = False
+    # At least one priced-in-principle turn had no rate available.
+    unknown: bool = False
+
+    @property
+    def has_known(self) -> bool:
+        return self.reported or self.estimated
+
+    def merge(self, other: "CostCoverage") -> None:
+        self.reported = self.reported or other.reported
+        self.estimated = self.estimated or other.estimated
+        self.unknown = self.unknown or other.unknown
+
+    def payload(self) -> dict:
+        return {
+            "reported": self.reported,
+            "estimated": self.estimated,
+            "unknown": self.unknown,
+        }
+
+
+@dataclass(slots=True)
 class DailyUsage:
     date: str
     input_tokens: int = 0
@@ -33,6 +71,7 @@ class DailyUsage:
     cache_read_tokens: int = 0
     total_tokens: int = 0
     total_cost: float = 0.0
+    cost_coverage: CostCoverage = field(default_factory=CostCoverage)
 
 
 @dataclass(slots=True)
@@ -51,6 +90,7 @@ class PeriodUsage:
     period: str
     total_tokens: int = 0
     total_cost: float = 0.0
+    cost_coverage: CostCoverage = field(default_factory=CostCoverage)
 
 
 @dataclass(slots=True)

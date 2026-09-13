@@ -94,6 +94,74 @@ STRINGS: dict[str, tuple[str, str, str, str]] = {
         "Datos obsoletos — puede que el rastreador se haya detenido.",
     ),
     "at_this_rate": ("at this rate, full at %1", "이 속도면 %1 에 도달", "このペースだと %1 に到達", "a este ritmo, lleno a las %1"),
+    # cost provenance — "$0.00" and "we could not price this" are different claims
+    "cost_unavailable": (
+        "Cost unavailable", "비용을 알 수 없음", "コスト不明", "Coste no disponible",
+    ),
+    "cost_estimate_hint": (
+        "Estimated from published model prices.", "공개된 모델 단가로 추정한 값이에요.",
+        "公開されている料金からの概算です。", "Estimado con los precios públicos del modelo.",
+    ),
+    "cost_partial_hint": (
+        "Some usage has no published price, so the real total is higher.",
+        "단가가 없는 사용량이 있어 실제 합계는 더 커요.",
+        "料金が公開されていない使用分があるため、実際の合計はこれより大きくなります。",
+        "Parte del uso no tiene precio publicado, así que el total real es mayor.",
+    ),
+    # collection
+    "released": ("RELEASED", "놓아줌", "逃がした", "LIBERADO"),
+    "growth_boost": ("%1× growth", "%1× 성장", "成長 %1倍", "Crecimiento ×%1"),
+    "pokedex_detail": ("Details", "상세", "詳細", "Detalles"),
+    "close": ("Close", "닫기", "閉じる", "Cerrar"),
+    "level": ("Level", "레벨", "レベル", "Nivel"),
+    "ability": ("Ability", "특성", "とくせい", "Habilidad"),
+    "gender": ("Gender", "성별", "せいべつ", "Género"),
+    "male": ("Male", "수컷", "オス", "Macho"),
+    "female": ("Female", "암컷", "メス", "Hembra"),
+    "genderless": ("Unknown", "무성", "불명", "Desconocido"),
+    "types": ("Type", "타입", "タイプ", "Tipo"),
+    "base_stats": ("Stats", "능력치", "能力値", "Estadísticas"),
+    "individual_values": ("Individual values", "개체값", "個体値", "Valores individuales"),
+    "moves": ("Moves", "기술", "わざ", "Movimientos"),
+    "no_moves": ("No moves recorded.", "기록된 기술이 없어요.", "記録された技がありません。", "Sin movimientos registrados."),
+    "stat_hp": ("HP", "HP", "HP", "PS"),
+    "stat_attack": ("Attack", "공격", "こうげき", "Ataque"),
+    "stat_defense": ("Defense", "방어", "ぼうぎょ", "Defensa"),
+    "stat_special_attack": ("Sp. Atk", "특수공격", "とくこう", "At. Esp."),
+    "stat_special_defense": ("Sp. Def", "특수방어", "とくぼう", "Def. Esp."),
+    "stat_speed": ("Speed", "스피드", "すばやさ", "Velocidad"),
+    "detail_unavailable": (
+        "Details could not be loaded.", "상세 정보를 불러오지 못했어요.",
+        "詳細を読み込めませんでした。", "No se pudieron cargar los detalles.",
+    ),
+    # month trend
+    "month_trend": ("This month, day by day", "이번 달 일별 사용량", "今月の日別使用量", "Este mes, día a día"),
+    "no_usage_this_month": (
+        "No usage recorded this month yet.", "이번 달 사용 기록이 아직 없어요.",
+        "今月の使用記録はまだありません。", "Aún no hay uso registrado este mes.",
+    ),
+    # shop gating
+    "egg_needs_companion": (
+        "Hatch your egg first.", "지금 있는 알이 먼저 부화해야 해요.",
+        "先にタマゴをかえしてください。", "Primero incuba tu huevo.",
+    ),
+    # settings
+    "settings": ("Settings", "설정", "設定", "Ajustes"),
+    "difficulty": ("Difficulty", "난이도", "難易度", "Dificultad"),
+    "growth_difficulty": ("Growth", "성장", "成長", "Crecimiento"),
+    "shop_difficulty": ("Shop prices", "상점 가격", "ショップ価格", "Precios de la tienda"),
+    "difficulty_hint": (
+        "Lower is faster and cheaper. 100% is the original balance.",
+        "낮을수록 빠르고 저렴해요. 100% 가 기본 밸런스예요.",
+        "低いほど速く安くなります。100% が元のバランスです。",
+        "Más bajo es más rápido y barato. 100% es el equilibrio original.",
+    ),
+    "difficulty_rescale_note": (
+        "Changing this keeps the share of progress you have already earned.",
+        "이 값을 바꿔도 이미 쌓은 진행도의 비율은 유지돼요.",
+        "変更しても、すでに獲得した進捗の割合は保たれます。",
+        "Al cambiarlo se conserva la parte del progreso ya conseguido.",
+    ),
 }
 
 _INDEX = {code: i for i, code in enumerate(LANGUAGES)}

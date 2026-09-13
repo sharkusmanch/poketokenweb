@@ -44,3 +44,22 @@ def cost_compact(usd: float) -> str:
 
 def percent(value: float) -> str:
     return f"{value:.0f}%" if value == round(value) else f"{value:.1f}%"
+
+
+def with_coverage(
+    text: str, estimated: bool, unknown: bool, unavailable: str
+) -> str:
+    """Annotate a money string with what it does not know.
+
+    ``$1.20``   the amount is exact
+    ``≈$1.20``  estimated from the local rate table
+    ``≈$1.20+`` estimated AND something could not be priced — a floor, not a total
+    ``unavailable`` nothing in the period could be priced at all
+
+    The ``+`` is the point of the whole mechanism. Without it a day containing
+    one unpriced model renders a total that looks complete, and the reader has
+    no way to tell a cheap day from a day we could not read.
+    """
+    if unknown and not estimated:
+        return unavailable
+    return ("≈" if estimated else "") + text + ("+" if unknown else "")

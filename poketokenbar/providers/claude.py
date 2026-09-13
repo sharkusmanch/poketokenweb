@@ -13,7 +13,7 @@ from datetime import date as _date
 from datetime import datetime
 from pathlib import Path
 
-from .. import pricing
+from .. import aggregate
 from ..cache import ScanCache
 from ..models import DailyUsage, Entry, ProviderEnrichment
 
@@ -194,55 +194,17 @@ class ClaudeProvider:
         return dedup_keep_max(all_entries)
 
     def fetch_daily(self, today: str | None = None) -> DailyUsage | None:
+        """One day's totals. Priced per entry — a day mixes model rates."""
         day = today or _date.today().strftime("%Y-%m-%d")
-        entries = [e for e in self.scan_entries() if e.local_day == day]
-        if not entries:
-            return None
-        daily = DailyUsage(date=day)
-        for e in entries:
-            daily.input_tokens += e.input
-            daily.output_tokens += e.output
-            daily.cache_creation_tokens += e.cache_write
-            daily.cache_read_tokens += e.cache_read
-            # Priced per entry, because a day mixes models with different rates.
-            daily.total_cost += pricing.cost(
-                e.model, e.input, e.output, e.cache_write, e.cache_read
-            )
-        daily.total_tokens = (
-            daily.input_tokens
-            + daily.output_tokens
-            + daily.cache_creation_tokens
-            + daily.cache_read_tokens
-        )
-        return daily
+        return aggregate.daily(self.scan_entries(), day)
 
     def fetch_periods(self, today: str | None = None) -> dict:
-        """Week-to-date and month-to-date totals.
+        """Week-to-date, month-to-date, and this month's daily series.
 
         The week starts Monday, matching the Swift period grouping.
         """
-        from datetime import datetime, timedelta
-
         day = today or _date.today().strftime("%Y-%m-%d")
-        anchor = datetime.strptime(day, "%Y-%m-%d").date()
-        week_start = anchor - timedelta(days=anchor.weekday())
-        month_prefix = day[:7]
-
-        week = {"tokens": 0, "cost": 0.0}
-        month = {"tokens": 0, "cost": 0.0}
-        for e in self.scan_entries():
-            cost = pricing.cost(e.model, e.input, e.output, e.cache_write, e.cache_read)
-            if e.local_day[:7] == month_prefix:
-                month["tokens"] += e.total
-                month["cost"] += cost
-            try:
-                entry_day = datetime.strptime(e.local_day, "%Y-%m-%d").date()
-            except ValueError:
-                continue
-            if week_start <= entry_day <= anchor:
-                week["tokens"] += e.total
-                week["cost"] += cost
-        return {"week": week, "month": month}
+        return aggregate.periods(self.scan_entries(), day)
 
     def fetch_enrichment(self) -> ProviderEnrichment:
         # Blocks/burn-rate remain unported; the *_ok flags stay false so callers

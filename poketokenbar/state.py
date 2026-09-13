@@ -14,7 +14,7 @@ from pathlib import Path
 
 from . import format as fmt
 from . import l10n, limits
-from .models import DailyUsage
+from .models import CostCoverage, DailyUsage
 
 SCHEMA_VERSION = 1
 
@@ -68,6 +68,12 @@ def build(
     total_cost = sum(d.total_cost for d in daily_by_provider.values())
     limit_mode = config_values.get("limit_display_mode", "both")
 
+    language = config_values.get("language", "en")
+    unavailable = l10n.t("cost_unavailable", language)
+    coverage = CostCoverage()
+    for daily in daily_by_provider.values():
+        coverage.merge(daily.cost_coverage)
+
     return {
         "schema_version": SCHEMA_VERSION,
         "updated_at": time.time(),
@@ -78,7 +84,13 @@ def build(
             "total_cost": total_cost,
             "tokens_grouped": fmt.grouped(total_tokens),
             "tokens_compact": fmt.compact(total_tokens),
-            "cost_text": fmt.cost(total_cost),
+            "cost_text": fmt.with_coverage(
+                fmt.cost(total_cost),
+                coverage.estimated,
+                coverage.unknown,
+                unavailable,
+            ),
+            "cost_coverage": coverage.payload(),
         },
         "providers": {
             pid: {
@@ -88,6 +100,13 @@ def build(
                 "total_tokens_text": fmt.grouped(d.total_tokens),
                 "total_tokens_compact": fmt.compact(d.total_tokens),
                 "total_cost": d.total_cost,
+                "cost_text": fmt.with_coverage(
+                    fmt.cost(d.total_cost),
+                    d.cost_coverage.estimated,
+                    d.cost_coverage.unknown,
+                    unavailable,
+                ),
+                "cost_coverage": d.cost_coverage.payload(),
                 "input_tokens": d.input_tokens,
                 "output_tokens": d.output_tokens,
                 "cache_creation_tokens": d.cache_creation_tokens,
@@ -112,7 +131,12 @@ def build(
             "tokens_text": fmt.compact(total_tokens)
             if config_values.get("show_tokens_in_menu")
             else "",
-            "cost_text": fmt.cost_compact(total_cost)
+            "cost_text": fmt.with_coverage(
+                fmt.cost_compact(total_cost),
+                coverage.estimated,
+                coverage.unknown,
+                unavailable,
+            )
             if config_values.get("show_cost_in_menu")
             else "",
             "limit_text": limits.panel_text(limit_status, limit_mode)
