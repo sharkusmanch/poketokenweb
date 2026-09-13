@@ -8,7 +8,13 @@
  * loop that never recovers. Reloads are additionally capped by a
  * sessionStorage counter so even a mislabelled 200/HTML cannot storm.
  */
-import type { AppConfig, AppEvent, CommandName, StatePayload } from '../types'
+import type {
+  AppConfig,
+  AppEvent,
+  CommandName,
+  PokemonDetail,
+  StatePayload,
+} from '../types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -121,6 +127,18 @@ export async function fetchEvents(reload: Reload = defaultReload): Promise<AppEv
     return (body as { events: AppEvent[] }).events
   }
   return []
+}
+
+/** One species' detail page. 404 means the species data could not be had. */
+export function fetchPokemon(
+  speciesId: number,
+  reload: Reload = defaultReload,
+): Promise<PokemonDetail> {
+  return request<PokemonDetail>(
+    `/api/pokemon/${speciesId}`,
+    { headers: { Accept: 'application/json' } },
+    reload,
+  )
 }
 
 function post<T>(path: string, payload: unknown, reload: Reload): Promise<T> {

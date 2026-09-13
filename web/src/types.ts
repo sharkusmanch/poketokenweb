@@ -259,5 +259,33 @@ export interface AppEvent {
   published_at: number
 }
 
+export interface PokemonMove {
+  name: string
+  /** 0 means the move is known from the start rather than learned at a level. */
+  level: number
+}
+
+/** GET /api/pokemon/<id>. Species data is immutable and fetched on demand;
+ *  the individual's own values come from the save. */
+export interface PokemonDetail {
+  species_id: number
+  name: string
+  sprite_path: string
+  types: string[]
+  base_stats: Record<string, number>
+  /** Nature- and IV-adjusted. Empty when the individual is unknown. */
+  stats: Record<string, number>
+  ivs: Record<string, number>
+  moves: PokemonMove[]
+  version_group: string
+  is_shiny: boolean
+  nature: string | null
+  level: number | null
+  gender: string | null
+  ability: string | null
+  /** False for a record written before individual values existed. */
+  has_individual: boolean
+}
+
 export type CommandName = 'buy' | 'use' | 'refresh'
 export type TabId = 'home' | 'shop' | 'bag' | 'collection' | 'settings'

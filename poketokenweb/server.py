@@ -59,7 +59,7 @@ from urllib.parse import unquote, urlparse
 
 from poketokenbar import commands, config
 
-from . import api, events, heartbeat
+from . import api, detail, events, heartbeat
 from .paths import Paths
 
 #: Largest request body accepted. Every legitimate POST here is a handful of
@@ -397,6 +397,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._events()
             elif route == "/api/config":
                 self._config()
+            elif route.startswith("/api/pokemon/"):
+                self._pokemon(route)
             elif route.startswith("/sprites/"):
                 self._sprite(route)
             else:
@@ -473,6 +475,29 @@ class _Handler(BaseHTTPRequestHandler):
             200,
             {key: settings[key] for key in sorted(api.WEB_CONFIG_KEYS) if key in settings},
         )
+
+    def _pokemon(self, route: str) -> None:
+        """One species' detail page, assembled on demand.
+
+        404 rather than 500 when species data cannot be had: PokeAPI being
+        unreachable is an expected state for an offline deployment, not a bug
+        in this server, and the UI renders it as "details unavailable".
+        """
+        raw = unquote(route[len("/api/pokemon/") :]).strip("/")
+        if not detail.is_valid_species_id(raw):
+            self._not_found()
+            return
+        try:
+            found = detail.payload(self._paths, int(raw))
+        except Exception as exc:
+            # A detail page is a leaf feature; it must never take the app down.
+            _log_server_error("GET", self.path, exc)
+            found = None
+        if found is None:
+            self._json(404, {"error": "details unavailable"})
+            return
+        # Sprite paths are engine-local files, exactly as in /api/state.
+        self._json(200, api.public_state(found, self._paths.sprite_dir))
 
     def _sprite(self, route: str) -> None:
         try:

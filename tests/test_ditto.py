@@ -12,10 +12,16 @@ class Rigged(random.Random):
         super().__init__(1)
         self._ditto = ditto
 
-    def randrange(self, n):
-        if n == balance.DITTO_DISGUISE_DENOMINATOR:
-            return 0 if self._ditto else 1
-        return 1  # never shiny
+    def randrange(self, start, stop=None, step=1):
+        # Only the single-argument form is rigged -- that is the shape the
+        # ditto and shiny rolls use. IV rolls go through randint, which calls
+        # randrange(a, b + 1), and those must stay genuinely random or every
+        # hatched creature in the suite would share one stat spread.
+        if stop is None:
+            if start == balance.DITTO_DISGUISE_DENOMINATOR:
+                return 0 if self._ditto else 1
+            return 1  # never shiny
+        return super().randrange(start, stop, step)
 
 
 def _line(forms=2, rarity=Rarity.COMMON):

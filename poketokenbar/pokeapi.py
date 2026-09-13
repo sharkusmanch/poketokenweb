@@ -33,6 +33,11 @@ def _endpoint_origin() -> str:
 # Gen I-V. The animated Black/White sprites the panel uses stop here.
 MAX_SPECIES_ID = 649
 LANG_CODES = ("ko", "en", "ja-Hrkt", "ja", "es")
+# Which game's level-up learnset to keep. Black/White matches the animated
+# sprite set this app draws from, and keeping ONE version group is what turns a
+# ~300 KB /pokemon response into a few KB on disk: PokeAPI ships every move's
+# entire cross-generation history, and none of it is rendered.
+SUPPORTED_VERSION_GROUP = "black-white"
 # PokéAPI's GraphQL endpoint answers 403 to urllib's default User-Agent.
 USER_AGENT = "poketokenbar/0.1 (+https://github.com/chattymin/PokeTokenBar)"
 
@@ -138,6 +143,49 @@ class PokeAPI:
         self._species[species_id] = data
         return data
 
+    # --- per-species metadata (stats, types, abilities, moves) -------------
+
+    @property
+    def _metadata_dir(self) -> Path:
+        return self.cache_dir / "metadata"
+
+    def metadata(self, species_id: int) -> dict:
+        """Immutable species data, distilled and cached on disk.
+
+        Fetched on demand -- opening a detail page -- and never from the poll
+        loop. The raw /pokemon document is large and almost entirely moves from
+        games this app does not draw; only the supported version group is kept.
+
+        Raises PokeAPIError when it cannot be had, so the caller can say
+        "details unavailable" rather than render an empty page as if the
+        creature had no stats.
+        """
+        cached = self._metadata_dir / f"{species_id}.json"
+        if cached.is_file():
+            try:
+                return json.loads(cached.read_text(encoding="utf-8"))
+            except ValueError:
+                pass  # refetch below
+
+        raw = _get_json(f"{REST_BASE}/pokemon/{species_id}")
+        gender_rate = None
+        try:
+            gender_rate = self.species(species_id).get("gender_rate")
+        except PokeAPIError:
+            # A missing gender rate costs one row of the detail page; failing
+            # the whole fetch over it would cost all of them.
+            pass
+
+        distilled = _distil_pokemon(raw, species_id, gender_rate)
+        try:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cached.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(distilled), encoding="utf-8")
+            tmp.replace(cached)
+        except OSError:
+            pass  # a cache we cannot write is not a reason to fail the request
+        return distilled
+
     def line(self, base_species_id: int) -> EvoLine:
         """The evolution line starting at base_species_id.
 
@@ -209,6 +257,85 @@ class PokeAPI:
             raise PokeAPIError("no hatch candidates")
         weights = [c.capture_rate for c in candidates]
         return rng.choices(candidates, weights=weights, k=1)[0].id
+
+
+# PokeAPI names stats with hyphens; the save and the stat formula use
+# underscores, and mapping in one place keeps the difference off every caller.
+_STAT_NAMES = {
+    "hp": "hp",
+    "attack": "attack",
+    "defense": "defense",
+    "special-attack": "special_attack",
+    "special-defense": "special_defense",
+    "speed": "speed",
+}
+
+
+def _level_up_moves(raw: dict) -> tuple[list[dict], str]:
+    """Level-up moves for one version group, earliest first.
+
+    Prefers SUPPORTED_VERSION_GROUP. Falls back to whichever group has the most
+    level-up entries, so a species that group never shipped still shows a
+    learnset instead of an empty list.
+    """
+    by_group: dict[str, list[dict]] = {}
+    for entry in raw.get("moves") or []:
+        name = ((entry.get("move") or {}).get("name")) or ""
+        if not name:
+            continue
+        for detail in entry.get("version_group_details") or []:
+            method = ((detail.get("move_learn_method") or {}).get("name")) or ""
+            if method != "level-up":
+                continue
+            group = ((detail.get("version_group") or {}).get("name")) or ""
+            if not group:
+                continue
+            by_group.setdefault(group, []).append(
+                {"name": name, "level": int(detail.get("level_learned_at") or 0)}
+            )
+
+    if not by_group:
+        return [], ""
+    group = (
+        SUPPORTED_VERSION_GROUP
+        if by_group.get(SUPPORTED_VERSION_GROUP)
+        else max(by_group, key=lambda key: len(by_group[key]))
+    )
+    moves = sorted(by_group[group], key=lambda move: (move["level"], move["name"]))
+    return moves, group
+
+
+def _distil_pokemon(raw: dict, species_id: int, gender_rate) -> dict:
+    base_stats: dict[str, int] = {}
+    for stat in raw.get("stats") or []:
+        name = ((stat.get("stat") or {}).get("name")) or ""
+        key = _STAT_NAMES.get(name)
+        if key is not None:
+            base_stats[key] = int(stat.get("base_stat") or 0)
+
+    abilities: list[str] = []
+    hidden: list[str] = []
+    for entry in raw.get("abilities") or []:
+        name = ((entry.get("ability") or {}).get("name")) or ""
+        if not name:
+            continue
+        (hidden if entry.get("is_hidden") else abilities).append(name)
+
+    moves, group = _level_up_moves(raw)
+    return {
+        "species_id": species_id,
+        "types": [
+            ((t.get("type") or {}).get("name")) or ""
+            for t in raw.get("types") or []
+            if ((t.get("type") or {}).get("name"))
+        ],
+        "base_stats": base_stats,
+        "abilities": abilities,
+        "hidden_abilities": hidden,
+        "gender_rate": gender_rate if isinstance(gender_rate, int) else None,
+        "moves": moves,
+        "version_group": group,
+    }
 
 
 def _id_from_url(url: str) -> int | None:

@@ -11,7 +11,9 @@ import random
 from dataclasses import dataclass, field
 
 from . import balance
+from . import profile as profile_mod
 from .balance import Rarity
+from .profile import PokemonProfile
 
 
 @dataclass(slots=True)
@@ -47,6 +49,9 @@ class MonState:
     # later would change an in-flight companion's cost the moment an unrelated
     # line graduated.
     has_growth_boost: bool = False
+    # Rolled once at hatch and persisted, so the same creature stays the same
+    # creature. None only on saves written before profiles existed.
+    profile: PokemonProfile | None = None
 
     @property
     def growth_multiplier(self) -> int:
@@ -108,6 +113,12 @@ class DexEntry:
     # out of it was the one path by which the collection screen could shrink,
     # which contradicts the promise it makes.
     released_at: float | None = None
+    # The individual as it was when the record was made. Kept on the entry
+    # rather than recomputed, because the creature no longer exists to ask.
+    profile: PokemonProfile | None = None
+    # The level it finished at: 100 for a graduation, wherever it had got to
+    # for a release. Recomputing is impossible once the progress is gone.
+    level: int | None = None
 
     @property
     def is_released(self) -> bool:
@@ -288,6 +299,11 @@ def hatch(state: CompanionState, line: EvoLine, rng: random.Random) -> MonState:
         nature=roll_nature(rng),
         has_growth_boost=state.has_collected_final(line.base_id),
         hatched_at=__import__("time").time(),
+        # IVs are pure randomness and are fixed here. Gender and ability need
+        # species metadata (a network call), so species_id stays 0 and the
+        # display layer derives them on first use -- an offline hatch must
+        # still produce a real creature.
+        profile=PokemonProfile(ivs=profile_mod.roll_ivs(rng), species_id=0),
         # The disguise stores the species being impersonated; the reveal swaps
         # the display to Ditto while keeping this for the "it was Ditto!" moment.
         ditto_disguise=line.base_id if roll_ditto(rng, line) else None,
@@ -314,6 +330,8 @@ def graduate(state: CompanionState, mon: MonState, now: float | None = None) -> 
         nature=mon.nature,
         caught_at=now,
         raised_seconds=(now - mon.hatched_at) if mon.hatched_at else None,
+        profile=mon.profile,
+        level=profile_mod.MAX_LEVEL,
     )
     state.dex.append(entry)
     state.collected_finals.add(f"{mon.base_id}-{mon.current_id}")
@@ -322,7 +340,12 @@ def graduate(state: CompanionState, mon: MonState, now: float | None = None) -> 
     return entry
 
 
-def release(state: CompanionState, mon: MonState, now: float | None = None) -> DexEntry:
+def release(
+    state: CompanionState,
+    mon: MonState,
+    now: float | None = None,
+    growth_difficulty: float = 1.0,
+) -> DexEntry:
     """Record a companion let go to buy a fresh egg, and clear the slot.
 
     Three rules, each load-bearing:
@@ -353,6 +376,8 @@ def release(state: CompanionState, mon: MonState, now: float | None = None) -> D
         caught_at=now,
         raised_seconds=(now - mon.hatched_at) if mon.hatched_at else None,
         released_at=now,
+        profile=mon.profile,
+        level=profile_mod.level_of(mon, growth_difficulty),
     )
     state.dex.append(entry)
     state.active = None

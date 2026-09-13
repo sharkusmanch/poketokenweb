@@ -980,3 +980,78 @@ def test_a_500_is_logged(serve, monkeypatch, capfd):
     assert "500" in err and "PermissionError" in err
     # The traceback names server paths and must not be printed.
     assert "/data/config/config.json" not in err
+
+
+# --- GET /api/pokemon/<id> (#264) -------------------------------------------
+
+
+class TestPokemonDetail:
+    """The detail route. Species data needs the network, which these tests do
+    not have, so the interesting assertions are about validation and the
+    unavailable path -- both of which are the reachable states in a container
+    with restricted egress."""
+
+    def test_a_non_numeric_id_never_reaches_the_network(self, serve):
+        port = serve()
+        for bad in ("abc", "..", "%2e%2e%2f", "1.5", "-3", ""):
+            status, _, _ = request(port, "GET", f"/api/pokemon/{bad}")
+            assert status == 404, bad
+
+    def test_an_absurd_id_is_rejected_before_a_fetch(self, serve):
+        port = serve()
+        status, _, _ = request(port, "GET", "/api/pokemon/999999999999")
+        assert status == 404
+
+    def test_zero_is_not_a_species(self, serve):
+        port = serve()
+        status, _, _ = request(port, "GET", "/api/pokemon/0")
+        assert status == 404
+
+    def test_unavailable_species_data_is_a_404_not_a_500(self, serve, monkeypatch):
+        """PokeAPI being unreachable is an expected state for an offline
+        deployment, not a bug in this server."""
+        monkeypatch.setattr(server.detail, "payload", lambda *a, **k: None)
+        port = serve()
+        status, _, body = request(port, "GET", "/api/pokemon/25")
+        assert status == 404
+        assert json.loads(body)["error"] == "details unavailable"
+
+    def test_a_detail_page_is_served_as_json(self, serve, monkeypatch):
+        monkeypatch.setattr(
+            server.detail,
+            "payload",
+            lambda *a, **k: {"species_id": 25, "name": "Pikachu", "sprite_path": ""},
+        )
+        port = serve()
+        status, headers, body = request(port, "GET", "/api/pokemon/25")
+        assert status == 200
+        assert headers["Content-Type"].startswith("application/json")
+        assert json.loads(body)["name"] == "Pikachu"
+
+    def test_sprite_paths_are_rewritten_like_every_other_payload(
+        self, serve, monkeypatch
+    ):
+        monkeypatch.setattr(
+            server.detail,
+            "payload",
+            lambda *a, **k: {
+                "species_id": 25,
+                "sprite_path": "/data/cache/sprites/25-s.png",
+            },
+        )
+        port = serve()
+        _, _, body = request(port, "GET", "/api/pokemon/25")
+        assert json.loads(body)["sprite_path"] == "/sprites/25-s.png"
+
+    def test_a_crash_in_the_detail_builder_does_not_take_the_app_down(
+        self, serve, monkeypatch
+    ):
+        def explode(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(server.detail, "payload", explode)
+        port = serve()
+        status, _, _ = request(port, "GET", "/api/pokemon/25")
+        assert status == 404
+        # The server is still answering.
+        assert request(port, "GET", "/healthz")[0] in (200, 503)

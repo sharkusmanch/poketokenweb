@@ -12,7 +12,7 @@ import random
 from datetime import date as _date
 from pathlib import Path
 
-from . import balance, companion, l10n, pokeapi, save, shop, sprites
+from . import balance, companion, l10n, pokeapi, profile as profile_mod, save, shop, sprites
 from .companion import CompanionState
 from .format import compact as _compact
 
@@ -263,6 +263,7 @@ class CompanionStore:
             # None rather than 1 when unboosted, so the UI can test presence
             # instead of comparing against the default.
             "growth_multiplier": mon.growth_multiplier if mon.has_growth_boost else None,
+            "level": profile_mod.level_of(mon, self.growth_difficulty),
             "rarity": str(mon.rarity),
             "stage_index": mon.stage_index,
             "total_forms": mon.total_forms,
@@ -287,7 +288,12 @@ class CompanionStore:
         return granted
 
     def buy(self, key: str) -> str:
-        message = shop.buy(self.state, key, shop_difficulty=self.shop_difficulty)
+        message = shop.buy(
+            self.state,
+            key,
+            shop_difficulty=self.shop_difficulty,
+            growth_difficulty=self.growth_difficulty,
+        )
         self._persist()
         return message
 
@@ -386,6 +392,128 @@ class CompanionStore:
         if mon.current_id not in reached:
             reached.append(mon.current_id)
         return reached
+
+    # --- per-individual detail (#264) ---------------------------------------
+
+    def _species_metadata(self, species_id: int) -> dict | None:
+        """Immutable species data, or None when it cannot be had right now.
+
+        Best effort by design: the detail page says so rather than rendering an
+        empty creature, and nothing else in the app depends on it.
+        """
+        if self.api is None:
+            return None
+        try:
+            return self.api.metadata(species_id)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _profile_seed(profile, species_id: int) -> int:
+        """A stable seed from the individual's own IVs.
+
+        Derived rather than random so that deriving gender and ability twice --
+        before and after a restart, or after a failed metadata fetch -- cannot
+        produce two different creatures. Built from ints only: str hashing is
+        salted per process and would not survive a restart.
+        """
+        seed = species_id
+        for key in profile_mod.STAT_KEYS:
+            seed = seed * 32 + int(profile.ivs.get(key, 0))
+        return seed
+
+    def _reconcile_profile(self, profile, species_id: int) -> bool:
+        """Derive gender and ability for the species this creature now IS.
+
+        Runs when they were never rolled (an offline hatch, species_id 0) or
+        when the species changed underneath them -- which is exactly what a
+        revealed Ditto does. The IVs are the individual's own and never change;
+        gender and ability belong to the species.
+        """
+        if profile is None or profile.species_id == species_id:
+            return False
+        metadata = self._species_metadata(species_id)
+        if metadata is None:
+            return False
+        rng = random.Random(self._profile_seed(profile, species_id))
+        profile.gender = profile_mod.roll_gender(rng, metadata.get("gender_rate"))
+        profile.ability = profile_mod.roll_ability(rng, metadata.get("abilities") or [])
+        profile.species_id = species_id
+        return True
+
+    def _individual_for(self, species_id: int):
+        """The creature to describe: the active companion, else the newest
+        record that reached this species.
+
+        Returns (profile, level, nature, is_shiny) with None entries where the
+        record predates the field.
+        """
+        mon = self.state.active
+        if mon is not None and mon.current_id == species_id:
+            return (
+                mon.profile,
+                profile_mod.level_of(mon, self.growth_difficulty),
+                mon.nature,
+                mon.is_shiny,
+            )
+
+        for entry in sorted(
+            self.state.dex, key=lambda e: e.caught_at or 0, reverse=True
+        ):
+            if species_id in entry.chain_order:
+                return entry.profile, entry.level, entry.nature, entry.is_shiny
+        return None, None, None, False
+
+    def detail_payload(self, species_id: int) -> dict | None:
+        """Everything the detail page renders, or None when species data is
+        unavailable.
+
+        Fetched on demand. The poll loop never calls this -- a learnset is a
+        few KB per species and nothing on the main screens needs it.
+        """
+        metadata = self._species_metadata(species_id)
+        if metadata is None:
+            return None
+
+        profile, level, nature, is_shiny = self._individual_for(species_id)
+        # In memory only, deliberately. The derivation is seeded from the
+        # individual's own IVs, so recomputing it is free and always gives the
+        # same answer -- which means this can be served from a throwaway store
+        # on the web thread without a second writer touching the save.
+        self._reconcile_profile(profile, species_id)
+
+        ivs = dict(profile.ivs) if profile is not None else {}
+        sprite = ""
+        if self.sprites is not None:
+            path = self.sprites.path(species_id, animated=False, shiny=is_shiny)
+            sprite = str(path) if path else ""
+
+        return {
+            "species_id": species_id,
+            "name": self.species_name(species_id, self.state.language),
+            "sprite_path": sprite,
+            "types": metadata.get("types") or [],
+            "base_stats": metadata.get("base_stats") or {},
+            "moves": metadata.get("moves") or [],
+            "version_group": metadata.get("version_group") or "",
+            "is_shiny": is_shiny,
+            "nature": nature,
+            "level": level,
+            "gender": profile.gender if profile is not None else None,
+            "ability": profile.ability if profile is not None else None,
+            "ivs": ivs,
+            # Absent IVs mean a record written before profiles existed; the
+            # page shows species data and says the individual is unknown,
+            # rather than inventing a perfect creature with 0s.
+            "has_individual": bool(ivs),
+            "stats": (
+                profile_mod.computed_stats(
+                    ivs, metadata.get("base_stats") or {}, level or 1, nature
+                )
+                if ivs and level
+                else {}
+            ),
+        }
 
     def dex_payload(self) -> list[dict]:
         """Species-level collection — ports dexSpecies.

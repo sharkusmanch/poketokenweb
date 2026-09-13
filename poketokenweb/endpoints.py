@@ -44,6 +44,7 @@ DEFAULT_SPRITE_ROOT = "https://raw.githubusercontent.com/PokeAPI/sprites/master/
 MARKER_FILENAME = "pokeapi-endpoint"
 INDEX_FILENAME = "base-species.json"
 SPECIES_DIRNAME = "species"
+METADATA_DIRNAME = "metadata"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +114,9 @@ def _invalidate_stale_cache(cache_dir: Path, rest: str) -> bool:
         cache_dir.mkdir(parents=True, exist_ok=True)
         (cache_dir / INDEX_FILENAME).unlink(missing_ok=True)
         shutil.rmtree(cache_dir / SPECIES_DIRNAME, ignore_errors=True)
+        # Distilled stats/moves are just as host-specific as the species docs
+        # they were derived from.
+        shutil.rmtree(cache_dir / METADATA_DIRNAME, ignore_errors=True)
         marker.write_text(rest, encoding="utf-8")
     except OSError:
         # A cache we cannot rewrite is not worth refusing to boot over.

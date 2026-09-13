@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { CatchLogEntry, DexEntry, RarityCounts, StatePayload } from '../types'
+import { PokemonDetail } from '../components/PokemonDetail'
 import { Sprite } from '../components/Sprite'
 import { formatCaughtAt } from '../lib/format'
+import type { PokemonDetail as Detail } from '../types'
 
 type View = 'dex' | 'catch_log'
 
@@ -9,6 +11,8 @@ interface CollectionProps {
   state: StatePayload
   /** Injectable so a test can land straight on the catch log. */
   initialView?: View
+  /** Injectable so a test does not go through the network layer. */
+  loadDetail?: (speciesId: number) => Promise<Detail>
 }
 
 const RARITIES = ['legendary', 'rare', 'uncommon', 'common'] as const
@@ -28,7 +32,15 @@ function Counts({ counts, strings }: { counts: RarityCounts; strings: Record<str
   )
 }
 
-function DexGrid({ entries, strings }: { entries: DexEntry[]; strings: Record<string, string> }) {
+function DexGrid({
+  entries,
+  strings,
+  onOpen,
+}: {
+  entries: DexEntry[]
+  strings: Record<string, string>
+  onOpen: (speciesId: number) => void
+}) {
   if (entries.length === 0) return <p className="empty">{strings.no_pokemon_yet}</p>
   return (
     <ul className="dex-grid">
@@ -38,16 +50,26 @@ function DexGrid({ entries, strings }: { entries: DexEntry[]; strings: Record<st
           className={`dex-cell rarity-${entry.rarity}${entry.is_raising ? ' dex-raising' : ''}`}
           data-testid={`dex-${entry.species_id}`}
         >
-          {/* A species never falls back to an egg emoji. */}
-          <Sprite src={entry.sprite_path} alt={entry.name || `#${entry.species_id}`} />
-          <span className="dex-name">
-            {entry.name || `#${entry.species_id}`}
-            {entry.is_shiny ? (
-              <span className="shiny-mark" data-testid="shiny-mark" title={strings.shiny}>
-                ★
-              </span>
-            ) : null}
-          </span>
+          {/* The whole cell opens the detail page: a 44px sprite is already at
+              the floor of a comfortable touch target, so a smaller hit area
+              inside it would be unusable on a phone. */}
+          <button
+            type="button"
+            className="dex-cell-hit"
+            onClick={() => onOpen(entry.species_id)}
+            aria-label={`${entry.name || `#${entry.species_id}`} — ${strings.pokedex_detail}`}
+          >
+            {/* A species never falls back to an egg emoji. */}
+            <Sprite src={entry.sprite_path} alt={entry.name || `#${entry.species_id}`} />
+            <span className="dex-name">
+              {entry.name || `#${entry.species_id}`}
+              {entry.is_shiny ? (
+                <span className="shiny-mark" data-testid="shiny-mark" title={strings.shiny}>
+                  ★
+                </span>
+              ) : null}
+            </span>
+          </button>
           {entry.is_raising ? <span className="badge badge-raising">{strings.raising}</span> : null}
         </li>
       ))}
@@ -113,10 +135,22 @@ function CatchLog({ entries, strings }: { entries: CatchLogEntry[]; strings: Rec
   )
 }
 
-export function Collection({ state, initialView = 'dex' }: CollectionProps) {
+export function Collection({ state, initialView = 'dex', loadDetail }: CollectionProps) {
   const [view, setView] = useState<View>(initialView)
+  const [detailOf, setDetailOf] = useState<number | null>(null)
   const strings = state.strings
   const counts = view === 'dex' ? state.rarity_counts : state.catch_counts
+
+  if (detailOf !== null) {
+    return (
+      <PokemonDetail
+        speciesId={detailOf}
+        strings={strings}
+        onClose={() => setDetailOf(null)}
+        load={loadDetail}
+      />
+    )
+  }
 
   return (
     <div className="tab-panel" data-testid="tab-collection">
@@ -143,7 +177,7 @@ export function Collection({ state, initialView = 'dex' }: CollectionProps) {
       </div>
       <Counts counts={counts} strings={strings} />
       {view === 'dex' ? (
-        <DexGrid entries={state.dex} strings={strings} />
+        <DexGrid entries={state.dex} strings={strings} onOpen={setDetailOf} />
       ) : (
         <CatchLog entries={state.catch_log} strings={strings} />
       )}

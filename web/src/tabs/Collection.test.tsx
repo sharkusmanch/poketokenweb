@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Collection } from './Collection'
@@ -126,5 +126,49 @@ describe('releases', () => {
     // The species Vaporeon is released in the fixture, yet still listed.
     render(<Collection state={monState} />)
     expect(screen.getByTestId('dex-134')).toBeInTheDocument()
+  })
+})
+
+describe('opening a Pokédex entry', () => {
+  const DETAIL = {
+    species_id: 134,
+    name: 'Vaporeon',
+    sprite_path: '',
+    types: ['water'],
+    base_stats: { hp: 130, attack: 65, defense: 60, special_attack: 110, special_defense: 95, speed: 65 },
+    stats: { hp: 200, attack: 100, defense: 95, special_attack: 150, special_defense: 130, speed: 100 },
+    ivs: { hp: 31, attack: 5, defense: 9, special_attack: 28, special_defense: 14, speed: 3 },
+    moves: [{ name: 'water-gun', level: 1 }],
+    version_group: 'black-white',
+    is_shiny: false,
+    nature: 'calm',
+    level: 100,
+    gender: 'male',
+    ability: 'water-absorb',
+    has_individual: true,
+  }
+
+  it('opens the detail page for the species that was tapped', async () => {
+    const user = userEvent.setup()
+    const load = vi.fn().mockResolvedValue(DETAIL)
+    render(<Collection state={monState} loadDetail={load} />)
+    await user.click(within(screen.getByTestId('dex-134')).getByRole('button'))
+    expect(load).toHaveBeenCalledWith(134)
+    expect(await screen.findByTestId('detail-name')).toHaveTextContent('Vaporeon')
+  })
+
+  it('goes back to the grid on close', async () => {
+    const user = userEvent.setup()
+    render(<Collection state={monState} loadDetail={vi.fn().mockResolvedValue(DETAIL)} />)
+    await user.click(within(screen.getByTestId('dex-134')).getByRole('button'))
+    await screen.findByTestId('detail-name')
+    await user.click(screen.getByRole('button', { name: new RegExp(strings.close, 'i') }))
+    expect(screen.getByTestId('dex-134')).toBeInTheDocument()
+  })
+
+  it('names the species in the cell accessible label', () => {
+    render(<Collection state={monState} loadDetail={vi.fn()} />)
+    const cell = within(screen.getByTestId('dex-134')).getByRole('button')
+    expect(cell).toHaveAccessibleName(new RegExp('Vaporeon'))
   })
 })

@@ -89,7 +89,12 @@ def _debit(state: CompanionState, price: int) -> None:
     state.spent_tokens += price
 
 
-def buy(state: CompanionState, key: str, shop_difficulty: float = 1.0) -> str:
+def buy(
+    state: CompanionState,
+    key: str,
+    shop_difficulty: float = 1.0,
+    growth_difficulty: float = 1.0,
+) -> str:
     """Purchase one shop entry. Returns a short description of what happened.
 
     The price is recomputed from the SAME function the listing used, so a
@@ -121,7 +126,7 @@ def buy(state: CompanionState, key: str, shop_difficulty: float = 1.0) -> str:
     # recorded in the dex so the species it contributed does not vanish from
     # the collection. That was the single path by which the Pokedex could
     # shrink, and a screen that promises to only accumulate must not do that.
-    companion.release(state, state.active)
+    companion.release(state, state.active, growth_difficulty=growth_difficulty)
     state.active = None
     state.egg_usage = 0
     state.egg_tier = tier

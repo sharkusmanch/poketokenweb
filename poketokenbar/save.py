@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .balance import Rarity
 from .companion import CompanionState, DexEntry, MonState
+from .profile import PokemonProfile, clamp as _clamp_profile
 
 
 def default_path() -> Path:
@@ -47,6 +48,42 @@ def _optional_rarity(value) -> Rarity | None:
 def _lenient(raw: dict, key: str, kind, default):
     value = raw.get(key, default)
     return value if isinstance(value, kind) else default
+
+
+SCHEMA_VERSION = 2
+LEGACY_BACKUP_SUFFIX = ".pre-profiles-v1.json"
+
+
+def _decode_profile(raw) -> PokemonProfile | None:
+    """A profile, or None when the save predates them.
+
+    Clamped rather than trusted: import_from reads a file the user supplies, so
+    an IV of 9999 would render a creature no roll can produce and a negative
+    one would underflow the stat formula.
+    """
+    if not isinstance(raw, dict):
+        return None
+    ivs = raw.get("ivs")
+    if not isinstance(ivs, dict):
+        return None
+    profile = PokemonProfile(
+        ivs={k: v for k, v in ivs.items() if isinstance(v, int)},
+        gender=raw.get("gender") if isinstance(raw.get("gender"), str) else "genderless",
+        ability=raw.get("ability") if isinstance(raw.get("ability"), str) else "",
+        species_id=raw.get("species_id") if isinstance(raw.get("species_id"), int) else 0,
+    )
+    return _clamp_profile(profile)
+
+
+def _encode_profile(profile: PokemonProfile | None):
+    if profile is None:
+        return None
+    return {
+        "ivs": profile.ivs,
+        "gender": profile.gender,
+        "ability": profile.ability,
+        "species_id": profile.species_id,
+    }
 
 
 def _decode_mon(raw) -> MonState | None:
@@ -84,6 +121,7 @@ def _decode_mon(raw) -> MonState | None:
         # Absent on saves written before repeat growth existed; those
         # companions keep standard growth, which is what they were raised at.
         has_growth_boost=_lenient(raw, "has_growth_boost", bool, False),
+        profile=_decode_profile(raw.get("profile")),
         hatched_at=raw.get("hatched_at") if isinstance(raw.get("hatched_at"), (int, float)) else None,
     )
 
@@ -114,6 +152,8 @@ def _decode_dex_entry(raw) -> DexEntry | None:
         released_at=raw.get("released_at")
         if isinstance(raw.get("released_at"), (int, float))
         else None,
+        profile=_decode_profile(raw.get("profile")),
+        level=raw.get("level") if isinstance(raw.get("level"), int) else None,
     )
 
 
@@ -173,9 +213,11 @@ def encode(state: CompanionState) -> dict:
             "ditto_revealed": m.ditto_revealed,
             "hatched_at": m.hatched_at,
             "has_growth_boost": m.has_growth_boost,
+            "profile": _encode_profile(m.profile),
         }
 
     return {
+        "schema_version": SCHEMA_VERSION,
         "install_baseline_set": state.install_baseline_set,
         "used_since_install": state.used_since_install,
         "spent_tokens": state.spent_tokens,
@@ -196,6 +238,8 @@ def encode(state: CompanionState) -> dict:
                 "caught_at": d.caught_at,
                 "raised_seconds": d.raised_seconds,
                 "released_at": d.released_at,
+                "profile": _encode_profile(d.profile),
+                "level": d.level,
             }
             for d in state.dex
         ],
@@ -219,7 +263,30 @@ def load(path: Path | None = None) -> CompanionState:
     if not isinstance(raw, dict):
         _quarantine(path)
         return CompanionState()
+    _backup_legacy(path, raw)
     return decode(raw)
+
+
+def _backup_legacy(path: Path, raw: dict) -> None:
+    """Keep one copy of the last pre-profiles save.
+
+    Decoding is purely additive, so this is not needed for correctness -- an
+    old save loads unchanged. It is insurance for a live install: the first
+    write after upgrading replaces a file no older build could be handed back,
+    and a Pokedex is not something to be casually unrecoverable.
+
+    Written once. A second upgrade must not overwrite the original with an
+    already-migrated copy.
+    """
+    if raw.get("schema_version") is not None:
+        return
+    backup = path.with_name(path.stem + LEGACY_BACKUP_SUFFIX)
+    if backup.exists():
+        return
+    try:
+        backup.write_bytes(path.read_bytes())
+    except OSError:
+        pass  # a backup we cannot write must not block the app from starting
 
 
 def _quarantine(path: Path) -> None:
