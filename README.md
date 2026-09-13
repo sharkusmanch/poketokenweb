@@ -29,11 +29,16 @@ app. The token economy, evolution pacing, rarity curve, hatch thresholds, shiny 
 shop prices are used verbatim because they are tuned values. **If you like this, star the
 upstream project.**
 
-The Python engine here is forked from
+The Python engine here began as a fork of
 [rubensanchezrivero/poketokenbar-plasma](https://github.com/rubensanchezrivero/poketokenbar-plasma)
 (an unofficial Linux/KDE port of the same app), at commit **`54d47a2`**. The git history of
-that port is preserved in this repository. Everything under `poketokenbar/` is theirs;
-`poketokenweb/` (the HTTP layer) and `web/` (the browser UI) are what this project adds.
+that port is preserved in this repository.
+
+**`poketokenbar/` is now a hard fork.** It was originally kept byte-identical to that
+snapshot so upstream fixes could be merged straight in, but that port has had no commits
+since, so the discipline bought nothing while blocking behaviour the Swift app had moved on
+to. The engine now tracks **chattymin/PokeTokenBar** directly and is ported by hand;
+`poketokenweb/` (the HTTP layer) and `web/` (the browser UI) remain this project's own.
 
 ## Run it yourself
 
@@ -59,7 +64,8 @@ Everything is an environment variable; nothing is compiled in.
 | `POKETOKENWEB_WEB_ROOT` | `/app/web` | Built frontend assets. |
 | `POKETOKENWEB_SPOOL_DIR` | `/tmp/poketokenbar/commands` | UI → daemon command queue. |
 | `CLAUDE_CONFIG_DIR` | *(unset)* | Claude **config** dir, if yours is not the default; `projects/` is appended to it. Claude Code defines this name. |
-| `POKETOKENWEB_CLAUDE_PROJECT_ROOTS` | *(unset)* | Extra transcript directories to scan, `:`-separated. Each is scanned recursively. In Docker these are paths **inside** the container, so mount them too. |
+| `POKETOKENWEB_CLAUDE_PROJECT_ROOTS` | *(unset)* | Extra Claude transcript directories to scan, `:`-separated. Each is scanned recursively. In Docker these are paths **inside** the container, so mount them too. |
+| `POKETOKENWEB_CODEX_SESSION_ROOTS` | *(unset)* | The same, for Codex rollouts. Deliberately a separate list: a Codex rollout under a Claude root is not a Claude transcript, so the two parsers are never handed the same folder. |
 | `POKETOKENWEB_MAX_SPECIES_ID` | `649` | Highest species the companion pool draws from. See [Which Pokémon can hatch](#which-pokémon-can-hatch). |
 | `POKETOKENWEB_POKEAPI_BASE_URL` | `https://pokeapi.co/api/v2` | PokéAPI REST base. See [Running your own PokéAPI](#running-your-own-pokéapi). |
 | `POKETOKENWEB_POKEAPI_GRAPHQL_URL` | `https://graphql.pokeapi.co/v1beta2` | PokéAPI GraphQL endpoint. Used once, to build the hatch pool. |
@@ -113,6 +119,17 @@ Each is independent — pointing only the sprites at a local mirror is fine.
 - **Remember the egress rules.** If you restrict outbound traffic, the new hosts need to
   be allowed and the old ones no longer do.
 
+### Difficulty
+
+Two independent multipliers in **Settings**, each 10%–200%, both starting at 100% — the
+original balance. Growth scales the egg and stage thresholds; shop scales prices. They are
+separate on purpose: graded egg prices derive from a *ratio* of the graduation cost, so a
+single slider would let "make it grow faster" quietly discount the shop.
+
+Changing growth keeps the **share** of the current egg or stage you have already earned, so
+nothing is lost or granted by moving a slider — and a change never hatches, evolves or
+graduates anything on its own. Your lifetime tokens, wallet and Pokédex are untouched.
+
 ### Notifications
 
 Hatches, evolutions, graduations, shinies and Ditto reveals are pushed through
@@ -159,16 +176,23 @@ user, set `PUID`/`PGID` in `.env` (see `.env.example`).
 | `~/.codex/sessions/**/*.jsonl` | Codex usage |
 | `~/.claude/.credentials.json` | OAuth token for official limits (optional) |
 | `~/.claude.json` | Which account those limits belong to (optional) |
-| [PokéAPI](https://pokeapi.co/) + [PokeAPI/sprites](https://github.com/PokeAPI/sprites) | Species, evolution chains, sprites — fetched at runtime, cached, never bundled. Both [configurable](#running-your-own-pokéapi). |
+| `~/.codex/archived_sessions/**/*.jsonl` | Codex usage from sessions Codex has archived |
+| Any dir in `POKETOKENWEB_CODEX_SESSION_ROOTS` | Extra Codex usage, scanned recursively (opt-in, unset by default) |
+| [PokéAPI](https://pokeapi.co/) + [PokeAPI/sprites](https://github.com/PokeAPI/sprites) | Species, evolution chains, stats, learnsets, sprites — fetched at runtime, cached, never bundled. Both [configurable](#running-your-own-pokéapi). Learnsets are fetched only when you open a Pokémon's detail page, never by the poll loop. |
 
 ## What's missing compared to the macOS app
 
-- **Eight of the ten usage providers.** Only Claude Code and Codex are supported; the
-  Linux port never carried Gemini CLI, Antigravity, OpenCode, Hermes, Cursor, Grok,
-  Copilot or Kiro.
+- **Eleven of the thirteen usage providers.** Only Claude Code and Codex are supported.
+  The Linux port never carried Gemini CLI, Antigravity, OpenCode, Hermes, Cursor, Grok,
+  Copilot or Kiro, and upstream has since added Pi, omp and Aside. The provider interface
+  is unchanged, so each is one file for someone who actually uses it and can verify it.
+- Official limits for anything but Claude, and the claude.ai session-key path — a Linux
+  container reads `~/.claude/.credentials.json` directly, so it never had the macOS
+  Keychain problem that path exists to work around.
 - The menu-bar presence and the floating desktop pet — this is a browser tab.
 - The game balance assumes one person's coding pace. If your logs include scheduled or
-  agent-driven runs, the companion will grow considerably faster than intended.
+  agent-driven runs, the companion will grow considerably faster than intended — the
+  growth [difficulty](#difficulty) slider exists for exactly that.
 
 ## Development
 
@@ -178,12 +202,10 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
 cd web && npm ci && npm test && npm run build
 ```
 
-The upstream Swift sources are the specification for game behaviour. `poketokenbar/` is
-kept as close to the Linux port as possible so its fixes can be merged; CI prints a drift
-diff against that upstream on every run. Settings reach the engine by rebinding module
-globals it reads at call time, rather than by editing it. One change could not be made
-that way and is the sole deliberate edit: the evolution-chain guard compared against a
-string literal, which no rebinding can reach.
+The upstream Swift sources are the specification for game behaviour, and `poketokenbar/`
+is ported from them by hand. Where a setting *can* be applied by rebinding a module global
+the engine reads at call time, it still is — that is how the PokéAPI endpoints and the
+species cap work, and it keeps those knobs out of the engine's own logic.
 
 ## License & disclaimer
 

@@ -39,13 +39,18 @@ jobs:
       # poketokenweb.notify (directly or via runner/__main__) fails to collect.
       - run: pip install -r requirements.txt pytest
       - run: python -m pytest -q
-      - name: Engine drift vs the upstream port
+      # Informational only. poketokenbar/ is a HARD fork now -- the Linux port
+      # it started from has had no commits since the snapshot, so this diff is
+      # a record of how far the engine has moved, not a merge to be attempted.
+      - name: Engine drift vs the original Linux port
         continue-on-error: true
         run: |
           git remote add port https://github.com/rubensanchezrivero/poketokenbar-plasma || true
           git fetch --quiet port main
           {
-            echo '### Engine drift vs rubensanchezrivero/poketokenbar-plasma'
+            echo '### Engine drift vs rubensanchezrivero/poketokenbar-plasma (informational)'
+            echo 'This engine is a hard fork tracking chattymin/PokeTokenBar; the diff'
+            echo 'below is expected to grow and is not a merge target.'
             echo '```'
             git diff --stat port/main -- poketokenbar/ || true
             echo '```'
