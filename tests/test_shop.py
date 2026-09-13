@@ -202,3 +202,54 @@ def test_window_key_excludes_volatile_fields():
     # it re-fired the notification each refresh in the Swift app.
     assert shop.window_key("weekly") == "limit:weekly"
     assert "resets" not in shop.window_key("weekly")
+
+
+# --- the egg-stage gate (#261) ---------------------------------------------
+
+
+def test_eggs_stay_listed_during_the_egg_stage():
+    """Dropping the cards read as "the shop does not sell eggs" rather than
+    "you cannot buy one right now"."""
+    keys = {e.key for e in shop.entries(CompanionState())}
+    assert "egg" in keys
+    assert f"egg:{Rarity.UNCOMMON}" in keys
+    assert f"egg:{Rarity.RARE}" in keys
+
+
+def test_an_egg_is_not_purchasable_without_a_companion():
+    eggs = [e for e in shop.entries(CompanionState()) if e.kind == "egg"]
+    assert eggs and all(e.purchasable is False for e in eggs)
+    assert all(e.blocked_reason_key == "egg_needs_companion" for e in eggs)
+
+
+def test_an_egg_is_purchasable_once_something_has_hatched():
+    eggs = [e for e in shop.entries(_with_mon()) if e.kind == "egg"]
+    assert eggs and all(e.purchasable is True for e in eggs)
+    assert all(e.blocked_reason_key == "" for e in eggs)
+
+
+def test_items_are_never_blocked_by_the_egg_stage():
+    items = [e for e in shop.entries(CompanionState()) if e.kind == "item"]
+    assert items and all(e.purchasable is True for e in items)
+
+
+@pytest.mark.parametrize("key", ["egg", f"egg:{Rarity.UNCOMMON}", f"egg:{Rarity.RARE}"])
+def test_buying_an_egg_during_the_egg_stage_is_refused(key):
+    s = CompanionState()
+    s.used_since_install = balance.egg_price(Rarity.RARE) * 10
+    with pytest.raises(shop.ShopError):
+        shop.buy(s, key)
+
+
+@pytest.mark.parametrize("key", ["egg", f"egg:{Rarity.UNCOMMON}", f"egg:{Rarity.RARE}"])
+def test_a_blocked_egg_purchase_does_not_touch_the_wallet(key):
+    """The guard sits before the debit: the purchase would buy nothing at all,
+    so taking the money would simply delete it."""
+    s = CompanionState()
+    s.used_since_install = balance.egg_price(Rarity.RARE) * 10
+    before = s.spendable_tokens
+    with pytest.raises(shop.ShopError):
+        shop.buy(s, key)
+    assert s.spendable_tokens == before
+    assert s.spent_tokens == 0
+    assert s.egg_tier is None

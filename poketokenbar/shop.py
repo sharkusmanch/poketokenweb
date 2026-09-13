@@ -25,6 +25,14 @@ class ShopEntry:
     price: int
     label: str
     owned: bool = False
+    # An l10n key naming why this cannot be bought right now, or "" when it
+    # can. A KEY rather than a sentence: the engine resolves strings for the
+    # configured language at payload time, as it does for status messages.
+    blocked_reason_key: str = ""
+
+    @property
+    def purchasable(self) -> bool:
+        return not self.blocked_reason_key
 
 
 def entries(state: CompanionState, shop_difficulty: float = 1.0) -> list[ShopEntry]:
@@ -49,6 +57,11 @@ def entries(state: CompanionState, shop_difficulty: float = 1.0) -> list[ShopEnt
             owned=state.inventory.get("shinyCharm", 0) > 0,
         ),
     ]
+    # A shop egg always means "release the current Pokemon and reroll", so
+    # there is nothing to reroll while one is incubating. The cards stay LISTED
+    # during the egg stage regardless -- dropping them read as "the shop does
+    # not sell eggs" rather than "you cannot buy one right now".
+    blocked = "" if state.active is not None else "egg_needs_companion"
     for tier in balance.EGG_SHOP_TIERS:
         key = f"egg:{tier}" if tier else "egg"
         label = {
@@ -56,7 +69,15 @@ def entries(state: CompanionState, shop_difficulty: float = 1.0) -> list[ShopEnt
             Rarity.UNCOMMON: "Uncommon Egg",
             Rarity.RARE: "Rare Egg",
         }[tier]
-        out.append(ShopEntry(key, "egg", price(balance.egg_price(tier)), label))
+        out.append(
+            ShopEntry(
+                key,
+                "egg",
+                price(balance.egg_price(tier)),
+                label,
+                blocked_reason_key=blocked,
+            )
+        )
     return sorted(out, key=lambda e: e.price)
 
 
@@ -88,6 +109,11 @@ def buy(state: CompanionState, key: str, shop_difficulty: float = 1.0) -> str:
     # Eggs replace the current companion outright.
     tier = {"egg": None, f"egg:{Rarity.UNCOMMON}": Rarity.UNCOMMON,
             f"egg:{Rarity.RARE}": Rarity.RARE}[entry.key]
+    # Before the debit, always: a blocked attempt must not be able to take the
+    # money. There is no companion to send away, so the purchase would buy
+    # nothing at all.
+    if state.active is None:
+        raise ShopError("an egg needs a hatched companion to send away")
     _debit(state, entry.price)
     # The companion is RELEASED, not graduated. collected_finals stays
     # untouched -- it was not raised to its final form, so it must not count
@@ -95,8 +121,7 @@ def buy(state: CompanionState, key: str, shop_difficulty: float = 1.0) -> str:
     # recorded in the dex so the species it contributed does not vanish from
     # the collection. That was the single path by which the Pokedex could
     # shrink, and a screen that promises to only accumulate must not do that.
-    if state.active is not None:
-        companion.release(state, state.active)
+    companion.release(state, state.active)
     state.active = None
     state.egg_usage = 0
     state.egg_tier = tier

@@ -78,7 +78,9 @@
       "emoji": "\ud83c\udf3f",
       "owned": false,
       "owned_count": 0,
-      "affordable": false
+      "affordable": false,
+      "purchasable": true,
+      "blocked_reason": ""
     },
     {
       "key": "rareCandy",
@@ -92,7 +94,9 @@
       "emoji": "\ud83c\udf6c",
       "owned": false,
       "owned_count": 0,
-      "affordable": false
+      "affordable": false,
+      "purchasable": true,
+      "blocked_reason": ""
     },
     {
       "key": "egg",
@@ -106,7 +110,9 @@
       "emoji": "\ud83e\udd5a",
       "owned": false,
       "owned_count": 0,
-      "affordable": false
+      "affordable": false,
+      "purchasable": false,
+      "blocked_reason": "Hatch your egg first."
     },
     {
       "key": "egg:uncommon",
@@ -120,7 +126,9 @@
       "emoji": "\ud83e\udd5a",
       "owned": false,
       "owned_count": 0,
-      "affordable": false
+      "affordable": false,
+      "purchasable": false,
+      "blocked_reason": "Hatch your egg first."
     },
     {
       "key": "shinyCharm",
@@ -134,7 +142,9 @@
       "emoji": "\u2728",
       "owned": false,
       "owned_count": 0,
-      "affordable": false
+      "affordable": false,
+      "purchasable": true,
+      "blocked_reason": ""
     },
     {
       "key": "egg:rare",
@@ -148,7 +158,9 @@
       "emoji": "\ud83e\udd5a",
       "owned": false,
       "owned_count": 0,
-      "affordable": false
+      "affordable": false,
+      "purchasable": false,
+      "blocked_reason": "Hatch your egg first."
     }
   ],
   "bag": [],

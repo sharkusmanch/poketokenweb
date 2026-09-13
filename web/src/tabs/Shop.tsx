@@ -16,9 +16,8 @@ export function Shop({ entries, strings, onBuy, pending, error }: ShopProps) {
   const [confirming, setConfirming] = useState<string | null>(null)
 
   const request = (entry: ShopEntry) => {
-    // Requirement 6: shop.buy() for an egg clears state.active outright — the
-    // companion is discarded, NOT graduated into the Pokédex — so an egg needs
-    // a deliberate second tap. Items are harmless and buy straight away.
+    // An egg releases the current companion and rerolls, so it needs a
+    // deliberate second tap. Items are harmless and buy straight away.
     if (entry.kind === 'egg') {
       setConfirming(entry.key)
       return
@@ -37,7 +36,10 @@ export function Shop({ entries, strings, onBuy, pending, error }: ShopProps) {
       <ul className="rows">
         {entries.map((entry) => {
           const busy = pending === entry.key
-          const disabled = entry.owned || !entry.affordable || busy
+          // `purchasable === false` is the state gate; absent means an older
+          // payload, which had no gate at all.
+          const blocked = entry.purchasable === false
+          const disabled = entry.owned || blocked || !entry.affordable || busy
           const isConfirming = confirming === entry.key
           return (
             <li className="row" key={entry.key} data-testid={`shop-${entry.key}`}>
@@ -57,7 +59,14 @@ export function Shop({ entries, strings, onBuy, pending, error }: ShopProps) {
                     {strings.price}: {entry.price_text}
                   </span>
                   {entry.owned ? <span className="row-note">{strings.owned}</span> : null}
-                  {!entry.owned && !entry.affordable ? (
+                  {/* The state reason wins over the balance one: being unable
+                      to buy at all is the more useful thing to say. */}
+                  {!entry.owned && blocked ? (
+                    <span className="row-note" data-testid={`blocked-${entry.key}`}>
+                      {entry.blocked_reason}
+                    </span>
+                  ) : null}
+                  {!entry.owned && !blocked && !entry.affordable ? (
                     <span className="row-note">{strings.not_enough_tokens}</span>
                   ) : null}
                 </div>
@@ -73,8 +82,9 @@ export function Shop({ entries, strings, onBuy, pending, error }: ShopProps) {
               {isConfirming ? (
                 <div className="confirm" data-testid={`confirm-${entry.key}`} role="group">
                   <p className="confirm-text">
-                    Your current Pokémon is sent away and is <strong>not added</strong> to your
-                    Pokédex — it is lost for good. Hatch {entry.label}?
+                    Your current Pokémon is <strong>released</strong>. Its species stays in
+                    your Pokédex, but this individual stops growing and does not count
+                    toward completing its line. Hatch {entry.label}?
                   </p>
                   <div className="confirm-actions">
                     <button

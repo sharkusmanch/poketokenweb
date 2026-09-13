@@ -336,6 +336,15 @@ class CompanionStore:
                     "owned": e.owned,
                     "owned_count": self.state.inventory.get(e.key, 0),
                     "affordable": spendable >= e.price and not e.owned,
+                    # Separate from affordability: "you cannot afford this" and
+                    # "this cannot be bought right now" are different answers,
+                    # and the state reason takes priority in the UI.
+                    "purchasable": e.purchasable,
+                    "blocked_reason": (
+                        l10n.t(e.blocked_reason_key, self.state.language)
+                        if e.blocked_reason_key
+                        else ""
+                    ),
                 }
             )
         return out

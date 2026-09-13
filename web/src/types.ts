@@ -81,6 +81,11 @@ export interface ShopEntry {
   owned: boolean
   owned_count: number
   affordable: boolean
+  /** False while the purchase is impossible in principle (an egg with nothing
+   *  to send away), as opposed to merely unaffordable. */
+  purchasable?: boolean
+  /** Localized one-liner for why, already resolved by the engine. */
+  blocked_reason?: string
 }
 
 export interface BagEntry {

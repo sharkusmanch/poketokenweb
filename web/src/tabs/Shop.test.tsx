@@ -2,13 +2,21 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Shop } from './Shop'
-import { clone, eggState } from '../__fixtures__'
+import { clone, eggState, monState } from '../__fixtures__'
 import type { ShopEntry } from '../types'
 
 const strings = eggState.strings
 
 function affordableShop(): ShopEntry[] {
-  return clone(eggState.shop).map((entry) => ({ ...entry, affordable: true }))
+  // Affordable AND buyable: the egg fixture is captured mid-incubation, where
+  // eggs are gated, and these tests are about the confirmation flow that only
+  // a purchasable egg reaches.
+  return clone(eggState.shop).map((entry) => ({
+    ...entry,
+    affordable: true,
+    purchasable: true,
+    blocked_reason: '',
+  }))
 }
 
 function renderShop(entries: ShopEntry[] = affordableShop(), onBuy = vi.fn()) {
@@ -79,13 +87,17 @@ describe('buying', () => {
     expect(screen.getByTestId('confirm-egg')).toBeInTheDocument()
   })
 
-  it('warns that the current Pokémon is lost, not graduated', async () => {
+  it('warns that the individual is released, without claiming the species is lost', async () => {
     const user = userEvent.setup()
     renderShop()
     await user.click(within(row('egg:rare')).getByRole('button', { name: strings.buy }))
     const confirm = screen.getByTestId('confirm-egg:rare')
     expect(confirm.textContent?.toLowerCase()).toContain('pokédex')
-    expect(confirm.textContent).toMatch(/lost|not added|sent away/i)
+    expect(confirm.textContent).toMatch(/released/i)
+    // The old copy said the Pokémon was "not added to your Pokédex — lost for
+    // good". Since #242 the species IS kept, so that warning is now false and
+    // must not come back.
+    expect(confirm.textContent).not.toMatch(/lost for good|not added/i)
   })
 
   it('buys the egg only after the confirmation is accepted', async () => {
@@ -132,5 +144,45 @@ describe('buying', () => {
     render(<Shop entries={affordableShop()} strings={strings} onBuy={vi.fn()} pending="mint" />)
     expect(within(row('mint')).getByRole('button')).toBeDisabled()
     expect(within(row('rareCandy')).getByRole('button')).toBeEnabled()
+  })
+})
+
+describe('the egg-stage gate', () => {
+  it('still lists all three egg tiers while an egg is incubating', () => {
+    render(<Shop entries={eggState.shop} strings={strings} onBuy={vi.fn()} pending={null} />)
+    expect(screen.getByTestId('shop-egg')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-egg:uncommon')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-egg:rare')).toBeInTheDocument()
+  })
+
+  it('disables the buy button and says why', () => {
+    render(<Shop entries={eggState.shop} strings={strings} onBuy={vi.fn()} pending={null} />)
+    const row = screen.getByTestId('shop-egg')
+    expect(within(row).getByRole('button')).toBeDisabled()
+    expect(within(row).getByTestId('blocked-egg')).toHaveTextContent(
+      strings.egg_needs_companion,
+    )
+  })
+
+  it('prefers the state reason over the balance reason', () => {
+    // Both apply in the egg fixture; only one should be shown.
+    render(<Shop entries={eggState.shop} strings={strings} onBuy={vi.fn()} pending={null} />)
+    const row = screen.getByTestId('shop-egg')
+    expect(within(row).queryByText(strings.not_enough_tokens)).not.toBeInTheDocument()
+  })
+
+  it('cannot be confirmed into a purchase', async () => {
+    const user = userEvent.setup()
+    const onBuy = vi.fn()
+    render(<Shop entries={eggState.shop} strings={strings} onBuy={onBuy} pending={null} />)
+    const row = screen.getByTestId('shop-egg')
+    await user.click(within(row).getByRole('button'))
+    expect(screen.queryByTestId('confirm-egg')).not.toBeInTheDocument()
+    expect(onBuy).not.toHaveBeenCalled()
+  })
+
+  it('leaves eggs buyable once a companion has hatched', () => {
+    render(<Shop entries={monState.shop} strings={strings} onBuy={vi.fn()} pending={null} />)
+    expect(screen.queryByTestId('blocked-egg')).not.toBeInTheDocument()
   })
 })
