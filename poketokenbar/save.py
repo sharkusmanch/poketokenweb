@@ -81,6 +81,9 @@ def _decode_mon(raw) -> MonState | None:
         if isinstance(raw.get("ditto_disguise"), int)
         else None,
         ditto_revealed=_lenient(raw, "ditto_revealed", bool, False),
+        # Absent on saves written before repeat growth existed; those
+        # companions keep standard growth, which is what they were raised at.
+        has_growth_boost=_lenient(raw, "has_growth_boost", bool, False),
         hatched_at=raw.get("hatched_at") if isinstance(raw.get("hatched_at"), (int, float)) else None,
     )
 
@@ -169,6 +172,7 @@ def encode(state: CompanionState) -> dict:
             "ditto_disguise": m.ditto_disguise,
             "ditto_revealed": m.ditto_revealed,
             "hatched_at": m.hatched_at,
+            "has_growth_boost": m.has_growth_boost,
         }
 
     return {

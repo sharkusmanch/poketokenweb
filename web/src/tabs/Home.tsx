@@ -65,6 +65,14 @@ function Companion({ state }: { state: StatePayload }) {
           {' '}
           · {companion.stage_index + 1}/{companion.total_forms}
         </span>
+        {companion.growth_multiplier ? (
+          <span className="badge badge-boost" data-testid="growth-boost">
+            {(strings.growth_boost ?? '%1× growth').replace(
+              '%1',
+              String(companion.growth_multiplier),
+            )}
+          </span>
+        ) : null}
       </p>
       <div
         className="track"

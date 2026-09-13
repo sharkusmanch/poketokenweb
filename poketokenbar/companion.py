@@ -42,6 +42,32 @@ class MonState:
     ditto_disguise: int | None = None
     ditto_revealed: bool = False
     hatched_at: float | None = None
+    # Decided once, at hatch, and persisted: this individual's line had already
+    # been graduated, so it grows at REPEAT_GROWTH_MULTIPLIER. Recomputing it
+    # later would change an in-flight companion's cost the moment an unrelated
+    # line graduated.
+    has_growth_boost: bool = False
+
+    @property
+    def growth_multiplier(self) -> int:
+        return balance.REPEAT_GROWTH_MULTIPLIER if self.has_growth_boost else 1
+
+    @property
+    def phase_threshold(self) -> int:
+        """Tokens this stage needs, before difficulty.
+
+        Read thresholds through here rather than calling balance.phase_threshold
+        directly: a call site that forgets the multiplier silently reverts that
+        one path to standard growth, and the symptom (a boosted companion that
+        evolves at the wrong point) looks like a balance opinion rather than a
+        bug.
+        """
+        return balance.phase_threshold(
+            self.rarity,
+            self.total_forms,
+            self.stage_index,
+            growth_multiplier=self.growth_multiplier,
+        )
 
     @property
     def current_id(self) -> int:
@@ -115,6 +141,17 @@ class CompanionState:
     @property
     def spendable_tokens(self) -> int:
         return max(0, self.used_since_install - self.spent_tokens)
+
+    def has_collected_final(self, base_id: int) -> bool:
+        """Whether this LINE has ever been graduated.
+
+        Keyed on the base species, not the final. A final-based test would leak
+        the branch a future hatch is going to take: two lines starting at the
+        same base can end at different finals, and asking about the final means
+        asking a question the player has not been shown the answer to yet.
+        """
+        prefix = f"{base_id}-"
+        return any(key.startswith(prefix) for key in self.collected_finals)
 
 
 @dataclass(slots=True)
@@ -201,6 +238,7 @@ def hatch(state: CompanionState, line: EvoLine, rng: random.Random) -> MonState:
         total_forms=line.total_forms,
         is_shiny=roll_shiny(rng, has_charm),
         nature=roll_nature(rng),
+        has_growth_boost=state.has_collected_final(line.base_id),
         hatched_at=__import__("time").time(),
         # The disguise stores the species being impersonated; the reveal swaps
         # the display to Ditto while keeping this for the "it was Ditto!" moment.
@@ -311,7 +349,7 @@ def apply_usage(
     mon = state.active
     mon.used_at_stage += tokens
     while True:
-        threshold = balance.phase_threshold(mon.rarity, mon.total_forms, mon.stage_index)
+        threshold = mon.phase_threshold
         if mon.used_at_stage < threshold:
             break
         mon.used_at_stage -= threshold

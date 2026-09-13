@@ -12,6 +12,11 @@ from enum import StrEnum
 # hatchling rather than being discarded.
 EGG_HATCH_THRESHOLD = 5_000_000
 
+# Hatching a line you have already graduated costs half as much to raise. The
+# hatch ROLL is already biased away from repeats (chooseBase halves their
+# weight); this makes the repeat itself less of a punishment when it happens.
+REPEAT_GROWTH_MULTIPLIER = 2
+
 
 class Rarity(StrEnum):
     COMMON = "common"
@@ -59,18 +64,25 @@ def graduation_total(rarity: Rarity) -> int:
     return GRADUATION_TOTAL[Rarity(rarity)]
 
 
-def phase_threshold(rarity: Rarity, total_forms: int, stage_index: int) -> int:
+def phase_threshold(
+    rarity: Rarity, total_forms: int, stage_index: int, growth_multiplier: int = 1
+) -> int:
     """Tokens needed at a stage before the next evolution or graduation.
 
     Weighted so later stages cost more while the sum over all stages equals the
     graduation total — a line's total is the same regardless of how many forms
     it has.
+
+    ``growth_multiplier`` divides the result: 2 means it grows twice as fast.
+    Floored at 1 so a threshold can never become 0, which would make progress a
+    division by zero and the evolution loop degenerate.
     """
     k = max(1, total_forms)
     i = stage_index + 1  # 1-based
     total = float(graduation_total(rarity))
     denom = (k * (k + 1)) / 2.0
-    return round(total * i / denom)
+    standard = round(total * i / denom)
+    return max(1, round(standard / max(1, growth_multiplier)))
 
 
 # --- items -----------------------------------------------------------------

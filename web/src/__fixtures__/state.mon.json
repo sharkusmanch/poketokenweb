@@ -99,7 +99,8 @@
     "spendable_tokens": 9000000000,
     "spendable_text": "9B",
     "display_state": "idle",
-    "status_message": "Keeping quiet today."
+    "status_message": "Keeping quiet today.",
+    "growth_multiplier": null
   },
   "shop": [
     {

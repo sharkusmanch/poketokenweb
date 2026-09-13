@@ -144,3 +144,27 @@ describe('Home — mon stage', () => {
     expect(screen.queryByTestId('sprite-emoji')).toBeNull()
   })
 })
+
+describe('repeat-hatch growth boost', () => {
+  it('shows no badge for a first hatch', () => {
+    renderHome(monState)
+    expect(screen.queryByTestId('growth-boost')).not.toBeInTheDocument()
+  })
+
+  it('shows the multiplier when the line was already graduated', () => {
+    const state = clone(monState)
+    if (state.companion.stage !== 'mon') throw new Error('unreachable')
+    state.companion.growth_multiplier = 2
+    renderHome(state)
+    expect(screen.getByTestId('growth-boost')).toHaveTextContent('2× growth')
+  })
+
+  it('shows no badge when the field is absent entirely', () => {
+    // A payload written by the previous release during a rolling update.
+    const state = clone(monState)
+    if (state.companion.stage !== 'mon') throw new Error('unreachable')
+    delete state.companion.growth_multiplier
+    renderHome(state)
+    expect(screen.queryByTestId('growth-boost')).not.toBeInTheDocument()
+  })
+})

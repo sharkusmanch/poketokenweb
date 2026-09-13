@@ -61,6 +61,9 @@ export interface MonCompanion extends CompanionCommon {
   used_at_stage: number
   stage_threshold: number
   stage_progress: number
+  /** Present only when this individual's line had already been graduated, so
+   *  it grows at that multiple. null (not 1) when unboosted. */
+  growth_multiplier?: number | null
 }
 
 export type Companion = EggCompanion | MonCompanion

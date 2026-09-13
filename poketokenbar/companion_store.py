@@ -191,7 +191,9 @@ class CompanionStore:
                 "status_message": l10n.t(f"status_{kind.lower()}", self.state.language),
             }
 
-        threshold = balance.phase_threshold(mon.rarity, mon.total_forms, mon.stage_index)
+        # Never balance.phase_threshold directly -- MonState.phase_threshold is
+        # the one place every growth multiplier is applied.
+        threshold = mon.phase_threshold
         # Remaining to the NEXT step: an evolution mid-line, graduation at the end.
         remaining = max(0, threshold - mon.used_at_stage)
         evo_line = []
@@ -219,6 +221,9 @@ class CompanionStore:
             "evo_line": evo_line,
             "is_shiny": mon.is_shiny,
             "nature": mon.nature,
+            # None rather than 1 when unboosted, so the UI can test presence
+            # instead of comparing against the default.
+            "growth_multiplier": mon.growth_multiplier if mon.has_growth_boost else None,
             "rarity": str(mon.rarity),
             "stage_index": mon.stage_index,
             "total_forms": mon.total_forms,
