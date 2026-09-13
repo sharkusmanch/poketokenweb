@@ -7,11 +7,12 @@ import { eggState } from '../__fixtures__'
 const strings = eggState.strings
 
 describe('TabBar', () => {
-  it('labels the four tabs the engine has strings for, plus a local Settings label', () => {
+  it('labels every tab from the engine catalogue, Settings included', () => {
     render(<TabBar tab="home" strings={strings} onSelect={vi.fn()} />)
-    // strings has 44 keys and NO "settings" key.
-    expect(strings).not.toHaveProperty('settings')
-    for (const label of [strings.home, strings.shop, strings.bag, strings.collection, 'Settings']) {
+    // Settings used to be a hardcoded English literal here; the engine now
+    // carries the string, so a ko/ja/es user sees five translated tabs.
+    expect(strings).toHaveProperty('settings')
+    for (const label of [strings.home, strings.shop, strings.bag, strings.collection, strings.settings]) {
       expect(screen.getByRole('tab', { name: label })).toBeInTheDocument()
     }
   })

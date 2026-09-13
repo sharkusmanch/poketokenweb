@@ -26,7 +26,7 @@ const MODES: AppConfig['limit_display_mode'][] = ['session', 'weekly', 'both']
 
 type NumericKey = 'refresh_interval' | 'warn_threshold' | 'crit_threshold'
 
-export function Settings({ config, onSave }: SettingsProps) {
+export function Settings({ config, strings, onSave }: SettingsProps) {
   // Drafts exist only so typing does not fire a request per keystroke; the
   // config prop is the source of truth and re-seeds them whenever it changes.
   const [drafts, setDrafts] = useState<Record<NumericKey, string>>({
@@ -112,9 +112,7 @@ export function Settings({ config, onSave }: SettingsProps) {
 
   return (
     <div className="tab-panel" data-testid="tab-settings">
-      {/* strings has no "settings" key (44 keys, none of them settings), so
-          this screen's own labels are local English text. */}
-      <h1 className="tab-title">Settings</h1>
+      <h1 className="tab-title">{strings.settings ?? 'Settings'}</h1>
       {error ? (
         <p className="alert" role="alert">
           {error}

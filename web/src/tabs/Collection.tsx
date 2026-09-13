@@ -85,6 +85,13 @@ function CatchLog({ entries, strings }: { entries: CatchLogEntry[]; strings: Rec
                   </span>
                 ) : null}
                 {entry.raising ? <span className="badge badge-raising">{strings.raising}</span> : null}
+                {entry.released ? (
+                  /* Neutral, not a warning colour: a release is a different
+                     kind of record, not a failure. */
+                  <span className="badge badge-released" data-testid="released-badge">
+                    {strings.released}
+                  </span>
+                ) : null}
               </span>
               <span className="row-desc">
                 <span className={`rarity rarity-${entry.rarity}`}>

@@ -527,6 +527,11 @@ body {
   border-color: var(--accent);
 }
 
+.badge-released {
+  color: var(--muted);
+  border-color: var(--muted);
+}
+
 .shiny-mark {
   color: var(--legendary);
 }

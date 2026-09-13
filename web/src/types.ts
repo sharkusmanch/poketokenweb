@@ -118,6 +118,9 @@ export interface CatchLogEntry {
   caught_at: number | null
   raised_text: string
   raising: boolean
+  /** Let go to buy a fresh egg. The species stays in the Pokedex either way;
+   *  only this log distinguishes a release from a graduation. */
+  released?: boolean
 }
 
 export interface LimitWindow {

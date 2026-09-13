@@ -73,6 +73,19 @@ class DexEntry:
     # sort last rather than pretending to be ancient.
     caught_at: float | None = None
     raised_seconds: float | None = None
+    # When this individual was let go to buy a fresh egg. None means it
+    # graduated -- which is also what every entry written before this field
+    # existed means, so no save migration is needed.
+    #
+    # Graduations and releases share one list because the Pokedex folds owned
+    # SPECIES and does not care how a species was obtained. Keeping releases
+    # out of it was the one path by which the collection screen could shrink,
+    # which contradicts the promise it makes.
+    released_at: float | None = None
+
+    @property
+    def is_released(self) -> bool:
+        return self.released_at is not None
 
 
 @dataclass(slots=True)
@@ -220,6 +233,43 @@ def graduate(state: CompanionState, mon: MonState, now: float | None = None) -> 
     state.collected_finals.add(f"{mon.base_id}-{mon.current_id}")
     state.active = None
     state.egg_usage = 0
+    return entry
+
+
+def release(state: CompanionState, mon: MonState, now: float | None = None) -> DexEntry:
+    """Record a companion let go to buy a fresh egg, and clear the slot.
+
+    Three rules, each load-bearing:
+
+    * **Only forms it actually reached** (``path_ids[:stage_index + 1]``).
+      Crediting the planned path would make buying an egg a shortcut to filling
+      the Pokedex with evolutions the creature never became.
+    * **``collected_finals`` is untouched.** It was not raised to its final
+      form, so it must not count toward completion or shift the hatch weighting.
+    * **``caught_at`` is the moment of release**, because the catch log sorts on
+      that field and the record came into existence now.
+
+    ``chain_order`` falls back to ``base_id`` for a damaged save whose
+    ``stage_index`` is out of range, matching ``MonState.current_id``'s
+    attitude: never let one bad field cost the whole entry.
+    """
+    import time as _time
+
+    now = _time.time() if now is None else now
+    reached = list(mon.path_ids[: max(1, mon.stage_index + 1)]) or [mon.base_id]
+    entry = DexEntry(
+        base_id=mon.base_id,
+        final_id=reached[-1],
+        chain_order=reached,
+        rarity=mon.rarity,
+        is_shiny=mon.is_shiny,
+        nature=mon.nature,
+        caught_at=now,
+        raised_seconds=(now - mon.hatched_at) if mon.hatched_at else None,
+        released_at=now,
+    )
+    state.dex.append(entry)
+    state.active = None
     return entry
 
 

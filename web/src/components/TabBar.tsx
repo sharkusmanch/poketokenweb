@@ -15,14 +15,15 @@ const ICONS: Record<TabId, string> = {
 }
 
 export function TabBar({ tab, strings, onSelect }: TabBarProps) {
-  // strings has no "settings" key — the engine's catalogue covers the popup,
-  // which has no settings screen — so that one label is local.
+  // Every label comes from the engine catalogue, Settings included. It was the
+  // one hardcoded English string in the tab bar, which meant a ko/ja/es user
+  // read four translated tabs and one English one.
   const tabs: { id: TabId; label: string }[] = [
     { id: 'home', label: strings.home ?? 'Home' },
     { id: 'shop', label: strings.shop ?? 'Shop' },
     { id: 'bag', label: strings.bag ?? 'Bag' },
     { id: 'collection', label: strings.collection ?? 'Collection' },
-    { id: 'settings', label: 'Settings' },
+    { id: 'settings', label: strings.settings ?? 'Settings' },
   ]
 
   return (

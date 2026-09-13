@@ -77,8 +77,14 @@ def buy(state: CompanionState, key: str) -> str:
     tier = {"egg": None, f"egg:{Rarity.UNCOMMON}": Rarity.UNCOMMON,
             f"egg:{Rarity.RARE}": Rarity.RARE}[entry.key]
     _debit(state, entry.price)
-    # The discarded companion is NOT graduated: it never entered the dex and
-    # must not affect collected_finals either — as if it had never hatched.
+    # The companion is RELEASED, not graduated. collected_finals stays
+    # untouched -- it was not raised to its final form, so it must not count
+    # toward completion or shift the hatch weighting -- but the individual is
+    # recorded in the dex so the species it contributed does not vanish from
+    # the collection. That was the single path by which the Pokedex could
+    # shrink, and a screen that promises to only accumulate must not do that.
+    if state.active is not None:
+        companion.release(state, state.active)
     state.active = None
     state.egg_usage = 0
     state.egg_tier = tier

@@ -8,7 +8,12 @@
     "total_cost": 411.18772974999945,
     "tokens_grouped": "529,546,967",
     "tokens_compact": "529.5M",
-    "cost_text": "$411.19"
+    "cost_text": "$411.19",
+    "cost_coverage": {
+      "reported": false,
+      "estimated": true,
+      "unknown": false
+    }
   },
   "providers": {
     "claude_code": {
@@ -19,7 +24,13 @@
       "input_tokens": 3474,
       "output_tokens": 2055190,
       "cache_creation_tokens": 17386277,
-      "cache_read_tokens": 510102026
+      "cache_read_tokens": 510102026,
+      "cost_coverage": {
+        "reported": false,
+        "estimated": true,
+        "unknown": false
+      },
+      "cost_text": "$411.19"
     }
   },
   "limits": {
@@ -43,7 +54,7 @@
   },
   "companion": {
     "stage": "egg",
-    "label": "🥚0%",
+    "label": "\ud83e\udd5a0%",
     "egg_usage": 0,
     "egg_progress": 0.0,
     "egg_tier": null,
@@ -64,7 +75,7 @@
       "description": "Randomly changes your Pokemon's nature.",
       "badge": "",
       "sprite_path": "",
-      "emoji": "🌿",
+      "emoji": "\ud83c\udf3f",
       "owned": false,
       "owned_count": 0,
       "affordable": false
@@ -78,7 +89,7 @@
       "description": "Raises your Pokemon's EXP by 100M.",
       "badge": "",
       "sprite_path": "/sprites/item-rare-candy.png",
-      "emoji": "🍬",
+      "emoji": "\ud83c\udf6c",
       "owned": false,
       "owned_count": 0,
       "affordable": false
@@ -92,7 +103,7 @@
       "description": "Send off your current Pokemon and start fresh with a new egg.",
       "badge": "",
       "sprite_path": "",
-      "emoji": "🥚",
+      "emoji": "\ud83e\udd5a",
       "owned": false,
       "owned_count": 0,
       "affordable": false
@@ -106,7 +117,7 @@
       "description": "Send off your current Pokemon for an egg guaranteed to hatch Uncommon or better.",
       "badge": "UNCOMMON",
       "sprite_path": "",
-      "emoji": "🥚",
+      "emoji": "\ud83e\udd5a",
       "owned": false,
       "owned_count": 0,
       "affordable": false
@@ -120,7 +131,7 @@
       "description": "While owned, raises the chance of hatching a shiny.",
       "badge": "",
       "sprite_path": "/sprites/item-shiny-charm.png",
-      "emoji": "✨",
+      "emoji": "\u2728",
       "owned": false,
       "owned_count": 0,
       "affordable": false
@@ -134,7 +145,7 @@
       "description": "Send off your current Pokemon for an egg guaranteed to hatch Rare or better.",
       "badge": "RARE",
       "sprite_path": "",
-      "emoji": "🥚",
+      "emoji": "\ud83e\udd5a",
       "owned": false,
       "owned_count": 0,
       "affordable": false
@@ -170,7 +181,7 @@
     "shop": "Shop",
     "bag": "Bag",
     "collection": "Collection",
-    "pokedex": "Pokédex",
+    "pokedex": "Pok\u00e9dex",
     "catch_log": "Catch log",
     "todays_tokens": "Today's tokens",
     "this_week": "This week",
@@ -190,7 +201,7 @@
     "status_working": "Today's work is piling up.",
     "status_focus": "In focus mode now.",
     "status_sleep": "Sleeping now.",
-    "status_tired": "Careful — the limit is close.",
+    "status_tired": "Careful \u2014 the limit is close.",
     "status_egg": "An egg is warming up.",
     "status_grew": "It grew!",
     "spendable_tokens": "Spendable tokens",
@@ -202,14 +213,48 @@
     "bag_empty": "Your bag is empty.",
     "price": "Price",
     "not_enough_tokens": "Not enough tokens",
-    "no_pokemon_yet": "No Pokémon caught yet!",
+    "no_pokemon_yet": "No Pok\u00e9mon caught yet!",
     "legendary": "Legendary",
     "rare": "Rare",
     "uncommon": "Uncommon",
     "common": "Common",
     "refresh": "Refresh",
-    "stale_warning": "Data is stale — the tracker may have stopped.",
-    "at_this_rate": "at this rate, full at %1"
+    "stale_warning": "Data is stale \u2014 the tracker may have stopped.",
+    "at_this_rate": "at this rate, full at %1",
+    "cost_unavailable": "Cost unavailable",
+    "cost_estimate_hint": "Estimated from published model prices.",
+    "cost_partial_hint": "Some usage has no published price, so the real total is higher.",
+    "released": "RELEASED",
+    "growth_boost": "%1\u00d7 growth",
+    "pokedex_detail": "Details",
+    "close": "Close",
+    "level": "Level",
+    "ability": "Ability",
+    "gender": "Gender",
+    "male": "Male",
+    "female": "Female",
+    "genderless": "Unknown",
+    "types": "Type",
+    "base_stats": "Stats",
+    "individual_values": "Individual values",
+    "moves": "Moves",
+    "no_moves": "No moves recorded.",
+    "stat_hp": "HP",
+    "stat_attack": "Attack",
+    "stat_defense": "Defense",
+    "stat_special_attack": "Sp. Atk",
+    "stat_special_defense": "Sp. Def",
+    "stat_speed": "Speed",
+    "detail_unavailable": "Details could not be loaded.",
+    "month_trend": "This month, day by day",
+    "no_usage_this_month": "No usage recorded this month yet.",
+    "egg_needs_companion": "Hatch your egg first.",
+    "settings": "Settings",
+    "difficulty": "Difficulty",
+    "growth_difficulty": "Growth",
+    "shop_difficulty": "Shop prices",
+    "difficulty_hint": "Lower is faster and cheaper. 100% is the original balance.",
+    "difficulty_rescale_note": "Changing this keeps the share of progress you have already earned."
   },
   "celebration": {},
   "burn": {},
@@ -217,7 +262,7 @@
   "panel": {
     "tokens_text": "",
     "cost_text": "",
-    "limit_text": "5h 51% · 7d 36%",
+    "limit_text": "5h 51% \u00b7 7d 36%",
     "limit_windows": [
       {
         "value": 51.0,

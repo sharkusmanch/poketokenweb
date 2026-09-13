@@ -310,40 +310,57 @@ class CompanionStore:
             if count > 0
         ]
 
+    def _owned_species_of_active(self) -> list[int]:
+        """Species the current companion has actually been.
+
+        The planned path is never used: it contains stages not yet evolved
+        into, which would list species that have never been owned.
+
+        A revealed Ditto is appended explicitly because the reveal does not
+        rewrite ``path_ids`` — the path still holds the disguise's line, so
+        without this the Ditto you now own would be absent from the collection
+        until it graduated.
+        """
+        mon = self.state.active
+        if mon is None:
+            return []
+        reached = list(mon.path_ids[: mon.stage_index + 1])
+        if mon.current_id not in reached:
+            reached.append(mon.current_id)
+        return reached
+
     def dex_payload(self) -> list[dict]:
         """Species-level collection — ports dexSpecies.
 
-        Includes every species in a graduated chain, plus the CURRENT
-        companion's reached forms only (path_ids up to stage_index). The
-        planned path is never used: it contains stages not yet evolved into,
-        which would list species that have never been owned.
+        Folds every species in ``state.dex`` (graduated AND released; the
+        Pokedex cares about owned species, not how they were obtained) plus the
+        current companion's reached forms.
 
-        A species backed only by the current companion is flagged is_raising —
-        buying an egg discards that companion and the entry disappears, so it
-        is not yet permanent.
+        ``is_raising`` marks the companion's CURRENT form only. It says "this is
+        what you are raising right now", not "this entry might disappear" —
+        nothing disappears any more, because a released companion is recorded.
+        Putting the badge on every earlier form read as raising several Pokemon
+        at once.
         """
         acc: dict[int, dict] = {}
 
         for entry in self.state.dex:
             for species_id in entry.chain_order:
                 slot = acc.setdefault(
-                    species_id,
-                    {"rarity": str(entry.rarity), "is_shiny": False, "graduated": False},
+                    species_id, {"rarity": str(entry.rarity), "is_shiny": False}
                 )
                 if entry.is_shiny:
                     slot["is_shiny"] = True
-                slot["graduated"] = True
 
         mon = self.state.active
-        if mon is not None:
-            for species_id in mon.path_ids[: mon.stage_index + 1]:
-                slot = acc.setdefault(
-                    species_id,
-                    {"rarity": str(mon.rarity), "is_shiny": False, "graduated": False},
-                )
-                if mon.is_shiny:
-                    slot["is_shiny"] = True
+        for species_id in self._owned_species_of_active():
+            slot = acc.setdefault(
+                species_id, {"rarity": str(mon.rarity), "is_shiny": False}
+            )
+            if mon.is_shiny:
+                slot["is_shiny"] = True
 
+        current_id = mon.current_id if mon is not None else None
         out = []
         for species_id in sorted(acc):
             slot = acc[species_id]
@@ -360,7 +377,7 @@ class CompanionStore:
                     "name": self.species_name(species_id, self.state.language),
                     "rarity": slot["rarity"],
                     "is_shiny": slot["is_shiny"],
-                    "is_raising": not slot["graduated"],
+                    "is_raising": species_id == current_id,
                     "sprite_path": sprite,
                 }
             )
@@ -397,6 +414,9 @@ class CompanionStore:
                 "caught_at": e.caught_at,
                 "raised_text": _duration(e.raised_seconds),
                 "raising": False,
+                # The log is the only place graduations and releases are told
+                # apart; the Pokedex deliberately treats them the same.
+                "released": e.is_released,
             }
             for e in self.state.dex
         ]
@@ -415,6 +435,7 @@ class CompanionStore:
                     "caught_at": mon.hatched_at,
                     "raised_text": "",
                     "raising": True,
+                    "released": False,
                 },
             )
         return out

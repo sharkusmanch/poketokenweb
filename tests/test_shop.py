@@ -4,7 +4,7 @@ import pytest
 
 from poketokenbar import balance, shop
 from poketokenbar.balance import Rarity
-from poketokenbar.companion import CompanionState, EvoLine, apply_usage
+from poketokenbar.companion import CompanionState, EvoLine, apply_usage, graduate, release
 
 
 def _with_mon(tokens=0):
@@ -66,15 +66,56 @@ def test_shiny_charm_cannot_be_bought_twice():
         shop.buy(s, "shinyCharm")
 
 
-def test_buying_an_egg_discards_the_companion_without_dex_credit():
-    # A discarded companion must vanish as if never hatched — no dex entry and
-    # no collected_finals mark, or it would skew future branch diversity.
+def test_buying_an_egg_releases_the_companion_into_the_dex():
+    """Replaces the old "vanish as if never hatched" contract.
+
+    The species had to survive: buying an egg was the ONLY path by which the
+    Pokedex could shrink, and a collection screen that promises to accumulate
+    must not lose entries. collected_finals still must not move, or releasing
+    would count toward completion and skew future branch weighting.
+    """
     s = _with_mon(tokens=balance.FRESH_EGG_PRICE)
     shop.buy(s, "egg")
     assert s.active is None
-    assert s.dex == []
+    assert len(s.dex) == 1
+    assert s.dex[0].is_released is True
     assert s.collected_finals == set()
     assert s.egg_usage == 0
+
+
+def test_a_released_companion_credits_only_the_forms_it_reached():
+    """Crediting the planned path would make buying an egg a shortcut to
+    filling the Pokedex with evolutions the creature never became."""
+    s = _with_mon(tokens=balance.FRESH_EGG_PRICE)
+    assert s.active.path_ids == [1, 2, 3]
+    assert s.active.stage_index == 0
+    shop.buy(s, "egg")
+    assert s.dex[0].chain_order == [1]
+    assert s.dex[0].final_id == 1
+
+
+def test_a_graduated_entry_is_not_marked_released():
+    s = _with_mon()
+    entry = graduate(s, s.active)
+    assert entry.is_released is False
+    assert entry.released_at is None
+
+
+def test_releasing_records_how_long_it_was_raised():
+    s = _with_mon(tokens=balance.FRESH_EGG_PRICE)
+    s.active.hatched_at = 1_000.0
+    release(s, s.active, now=1_600.0)
+    assert s.dex[0].raised_seconds == pytest.approx(600.0)
+    assert s.dex[0].caught_at == pytest.approx(1_600.0)
+
+
+def test_a_damaged_stage_index_still_yields_one_form():
+    """Same attitude as MonState.current_id: one bad field must not cost the
+    whole entry."""
+    s = _with_mon(tokens=balance.FRESH_EGG_PRICE)
+    s.active.stage_index = -5
+    release(s, s.active)
+    assert s.dex[0].chain_order == [1]
 
 
 def test_premium_egg_records_its_guarantee():

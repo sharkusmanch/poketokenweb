@@ -105,3 +105,26 @@ describe('catch log', () => {
     expect(screen.getByText(strings.no_pokemon_yet)).toBeInTheDocument()
   })
 })
+
+describe('releases', () => {
+  it('marks a released individual in the catch log', () => {
+    render(<Collection state={monState} initialView="catch_log" />)
+    // Exactly one fixture entry carries released: true.
+    expect(screen.getAllByTestId('released-badge')).toHaveLength(1)
+  })
+
+  it('does not badge a graduated individual as released', () => {
+    render(<Collection state={monState} initialView="catch_log" />)
+    const rows = screen.getAllByTestId(/^catch-/)
+    const badged = rows.filter((row) => within(row).queryByTestId('released-badge'))
+    const graduated = rows.filter((row) => !within(row).queryByTestId('released-badge'))
+    expect(badged.length).toBeGreaterThan(0)
+    expect(graduated.length).toBeGreaterThan(0)
+  })
+
+  it('keeps a released species in the Pokédex', () => {
+    // The species Vaporeon is released in the fixture, yet still listed.
+    render(<Collection state={monState} />)
+    expect(screen.getByTestId('dex-134')).toBeInTheDocument()
+  })
+})
