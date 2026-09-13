@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Settings } from './Settings'
 import { defaultConfig, eggState } from '../__fixtures__'
@@ -26,6 +26,8 @@ describe('Settings shows the server values', () => {
       crit_threshold: 90,
       limit_display_mode: 'weekly',
       language: 'ja',
+      growth_difficulty: 0.5,
+      shop_difficulty: 1.5,
     })
     expect(screen.getByLabelText(/refresh interval/i)).toHaveValue(300)
     expect(screen.getByLabelText(/warn threshold/i)).toHaveValue(55)
@@ -153,5 +155,54 @@ describe('Settings round-trip', () => {
       (option) => option.value,
     )
     expect(options).toEqual(['session', 'weekly', 'both'])
+  })
+})
+
+describe('difficulty multipliers', () => {
+  it('renders each multiplier as a percentage of the original balance', () => {
+    renderSettings({ ...defaultConfig, growth_difficulty: 0.5, shop_difficulty: 1.5 })
+    const card = screen.getByTestId('difficulty-card')
+    expect(within(card).getByText('50%')).toBeInTheDocument()
+    expect(within(card).getByText('150%')).toBeInTheDocument()
+  })
+
+  it('shows 100% for the untouched default', () => {
+    renderSettings()
+    const card = screen.getByTestId('difficulty-card')
+    expect(within(card).getAllByText('100%')).toHaveLength(2)
+  })
+
+  it('does not render a float artefact like 65.00000000000001%', () => {
+    renderSettings({ ...defaultConfig, growth_difficulty: 0.65 })
+    expect(screen.getByTestId('difficulty-card')).toHaveTextContent('65%')
+  })
+
+  it('commits growth difficulty on release, not on every drag frame', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<Settings config={defaultConfig} strings={strings} onSave={onSave} />)
+    const slider = screen.getByLabelText(/growth/i)
+    fireEvent.change(slider, { target: { value: '0.5' } })
+    // Dragging alone must not POST: the engine rescales banked progress on
+    // every change, so a drag would fire a rescale and a disk write per frame.
+    expect(onSave).not.toHaveBeenCalled()
+    fireEvent.mouseUp(slider)
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith('growth_difficulty', 0.5))
+  })
+
+  it('commits shop difficulty independently', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<Settings config={defaultConfig} strings={strings} onSave={onSave} />)
+    const slider = screen.getByLabelText(/shop prices/i)
+    fireEvent.change(slider, { target: { value: '1.5' } })
+    fireEvent.mouseUp(slider)
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith('shop_difficulty', 1.5))
+    expect(onSave).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers the same bounds the server validates', () => {
+    renderSettings()
+    const slider = screen.getByLabelText(/growth/i)
+    expect(slider).toHaveAttribute('min', '0.1')
+    expect(slider).toHaveAttribute('max', '2')
   })
 })

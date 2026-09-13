@@ -881,3 +881,43 @@ def test_the_callers_payload_is_never_mutated(tmp_path):
     original = _copy.deepcopy(payload)
     api.public_state(payload, tmp_path)
     assert payload == original
+
+
+# --- difficulty: float settings (#244/#287) ---------------------------------
+
+
+class TestDifficultyValidation:
+    def test_both_multipliers_are_web_settable(self):
+        assert "growth_difficulty" in api.WEB_CONFIG_KEYS
+        assert "shop_difficulty" in api.WEB_CONFIG_KEYS
+
+    @pytest.mark.parametrize("key", ["growth_difficulty", "shop_difficulty"])
+    @pytest.mark.parametrize("value", [0.1, 0.5, 1, 1.0, 2.0, "0.75"])
+    def test_a_value_inside_the_range_is_accepted(self, key, value):
+        got_key, got_value = api.validate_config({"key": key, "value": value})
+        assert got_key == key
+        assert 0.1 <= float(got_value) <= 2.0
+
+    @pytest.mark.parametrize("value", [0, 0.05, 2.1, 100, -1])
+    def test_a_value_outside_the_range_is_rejected(self, value):
+        with pytest.raises(api.ValidationError):
+            api.validate_config({"key": "growth_difficulty", "value": value})
+
+    @pytest.mark.parametrize("value", ["NaN", "inf", "-inf"])
+    def test_a_non_finite_value_is_rejected_rather_than_clamped(self, value):
+        """Silently turning NaN into 2.0 would hide a client bug. The engine's
+        own clamp still catches a hand-edited config file."""
+        with pytest.raises(api.ValidationError):
+            api.validate_config({"key": "growth_difficulty", "value": value})
+
+    @pytest.mark.parametrize("value", [True, None, {}, [], "abc"])
+    def test_a_non_numeric_value_is_rejected(self, value):
+        # bool is an int subclass, so True would otherwise sail through as 1.0.
+        with pytest.raises(api.ValidationError):
+            api.validate_config({"key": "shop_difficulty", "value": value})
+
+    def test_the_accepted_string_round_trips_through_the_engine_coercion(self):
+        from poketokenbar import config
+
+        _, value = api.validate_config({"key": "growth_difficulty", "value": 0.75})
+        assert config._coerce("growth_difficulty", value) == pytest.approx(0.75)

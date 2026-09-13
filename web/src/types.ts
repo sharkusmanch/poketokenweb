@@ -222,6 +222,9 @@ export interface AppConfig {
   crit_threshold: number
   limit_display_mode: 'session' | 'weekly' | 'both'
   language: 'en' | 'ko' | 'ja' | 'es'
+  /** Growth and shop multipliers, 0.1-2.0. 1.0 is the original balance. */
+  growth_difficulty: number
+  shop_difficulty: number
 }
 
 export type EventKind = 'hatched' | 'evolved' | 'graduated' | 'shiny' | 'ditto'

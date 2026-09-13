@@ -6,7 +6,45 @@ one changes the game, so they are copied rather than re-derived.
 
 from __future__ import annotations
 
+import math
 from enum import StrEnum
+
+# --- difficulty ------------------------------------------------------------
+#
+# Two independent multipliers, both defaulting to 1.0 so an existing install
+# sees no change until someone touches them. Growth scales the egg and stage
+# thresholds; shop scales prices.
+#
+# They must stay independent, and the tables must NOT be scaled in place:
+# graded egg prices derive from a RATIO of graduation_total (see egg_price), so
+# scaling that table would let the growth slider move shop pricing as a side
+# effect. Multiply at the consumption sites instead.
+
+DIFFICULTY_MIN = 0.1
+DIFFICULTY_MAX = 2.0
+DEFAULT_DIFFICULTY = 1.0
+
+
+def clamp_difficulty(value) -> float:
+    """A usable multiplier, whatever arrives.
+
+    The value round-trips through config.json, which is writable from outside
+    the app, so 0, a negative, a string and NaN can all genuinely turn up. A
+    multiplier of 0 would produce a zero threshold: division by zero in the
+    progress bar and a degenerate evolution loop.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_DIFFICULTY
+    if not math.isfinite(number):
+        return DEFAULT_DIFFICULTY
+    return min(max(number, DIFFICULTY_MIN), DIFFICULTY_MAX)
+
+
+def scaled(base: int, difficulty: float) -> int:
+    """A tuned constant with a difficulty applied. Never returns 0."""
+    return max(1, round(base * clamp_difficulty(difficulty)))
 
 # Tokens the egg must absorb before it hatches. Overflow carries into the
 # hatchling rather than being discarded.

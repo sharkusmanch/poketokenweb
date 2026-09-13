@@ -527,6 +527,16 @@ body {
   border-color: var(--accent);
 }
 
+.slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.field-value {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
 .badge-boost {
   color: var(--warn);
   border-color: var(--warn);

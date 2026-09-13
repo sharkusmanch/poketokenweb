@@ -202,6 +202,54 @@ STATUS_MESSAGE = {
 }
 
 
+def egg_threshold(growth_difficulty: float = 1.0) -> int:
+    """Tokens this egg needs to hatch, with difficulty applied."""
+    return balance.scaled(balance.EGG_HATCH_THRESHOLD, growth_difficulty)
+
+
+def stage_threshold(mon: MonState, growth_difficulty: float = 1.0) -> int:
+    """Tokens this stage needs, with the repeat bonus AND difficulty applied.
+
+    Every growth decision reads this. Calling balance.phase_threshold or
+    MonState.phase_threshold directly from a growth path would silently drop
+    difficulty for that path alone, which looks like a balance opinion rather
+    than a bug.
+    """
+    return balance.scaled(mon.phase_threshold, growth_difficulty)
+
+
+def rescale_banked_growth(state: CompanionState, old: float, new: float) -> None:
+    """Keep the SHARE of the current egg/stage already earned when difficulty
+    moves.
+
+    These are progression credits, not usage. Lifetime tokens, the per-provider
+    ledger and the wallet are never touched here -- someone who makes the game
+    easier has not spent more money, and someone who makes it harder has not
+    un-spent any.
+
+    Without this, lowering difficulty would instantly complete a stage that was
+    most of the way through at the old scale, and raising it would appear to
+    delete progress.
+    """
+    def rescale(credits: int, base: int) -> int:
+        old_threshold = max(1, round(base * old))
+        new_threshold = max(1, round(base * new))
+        if old_threshold == new_threshold or credits <= 0:
+            return max(0, credits)
+        value = int(credits / old_threshold * new_threshold)
+        # Rounding must never turn an incomplete stage into a completed one:
+        # that would evolve or graduate a companion because a slider moved.
+        if credits < old_threshold:
+            return max(0, min(new_threshold - 1, value))
+        return max(0, value)
+
+    active = state.active
+    if active is not None:
+        active.used_at_stage = rescale(active.used_at_stage, active.phase_threshold)
+    else:
+        state.egg_usage = rescale(state.egg_usage, balance.EGG_HATCH_THRESHOLD)
+
+
 def roll_shiny(rng: random.Random, has_charm: bool) -> bool:
     denominator = (
         balance.SHINY_CHARM_DENOMINATOR if has_charm else balance.SHINY_DENOMINATOR
@@ -316,6 +364,7 @@ def apply_usage(
     tokens: int,
     line_for_egg=None,
     rng: random.Random | None = None,
+    growth_difficulty: float = 1.0,
 ) -> GrowthEvents:
     """Feed tokens to the companion.
 
@@ -331,14 +380,15 @@ def apply_usage(
 
     # --- egg ---
     if state.active is None:
+        hatch_at = egg_threshold(growth_difficulty)
         state.egg_usage += tokens
-        if state.egg_usage < balance.EGG_HATCH_THRESHOLD:
+        if state.egg_usage < hatch_at:
             return events
         if line_for_egg is None:
             # No species data (offline). Hold the tokens in the egg and hatch
             # once a line is available — never discard progress.
             return events
-        overflow = state.egg_usage - balance.EGG_HATCH_THRESHOLD
+        overflow = state.egg_usage - hatch_at
         mon = hatch(state, line_for_egg, rng)
         events.hatched = mon.current_id
         tokens = overflow
@@ -349,7 +399,7 @@ def apply_usage(
     mon = state.active
     mon.used_at_stage += tokens
     while True:
-        threshold = mon.phase_threshold
+        threshold = stage_threshold(mon, growth_difficulty)
         if mon.used_at_stage < threshold:
             break
         mon.used_at_stage -= threshold

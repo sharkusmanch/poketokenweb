@@ -138,6 +138,15 @@ class Daemon:
                 self.companion_store.state.language = str(
                     self.config_values.get("language", "en")
                 )
+                # Difficulty is a preference in config.json, so it reaches the
+                # store the same way language does. Setting it rescales banked
+                # progress but never advances the game on its own.
+                self.companion_store.set_growth_difficulty(
+                    self.config_values.get("growth_difficulty", 1.0)
+                )
+                self.companion_store.set_shop_difficulty(
+                    self.config_values.get("shop_difficulty", 1.0)
+                )
                 self.companion_store.update(
                     {pid: d.total_tokens for pid, d in daily_by_provider.items()}
                 )

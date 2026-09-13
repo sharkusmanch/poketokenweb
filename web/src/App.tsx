@@ -139,6 +139,8 @@ export function App() {
     crit_threshold: 95,
     limit_display_mode: 'both',
     language: 'en',
+    growth_difficulty: 1,
+    shop_difficulty: 1,
   }
   const stale = isStale(state.updated_at, effectiveConfig.refresh_interval, now)
 

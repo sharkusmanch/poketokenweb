@@ -26,6 +26,9 @@ DEFAULTS: dict[str, object] = {
     "floating_pet_size": 96,
     "floating_pet_bubble_alerts": True,
     "language": "en",
+    # Difficulty multipliers. Preferences, not save data -- see CompanionStore.
+    "growth_difficulty": 1.0,
+    "shop_difficulty": 1.0,
 }
 
 
@@ -66,6 +69,10 @@ def _coerce(key: str, raw: str):
         raise ValueError(f"{key} expects a boolean, got {raw!r}")
     if isinstance(default, int):
         return int(raw)
+    if isinstance(default, float):
+        # Before int, order-wise, is unnecessary: bool and int are handled
+        # above and float is disjoint from both.
+        return float(raw)
     return raw
 
 

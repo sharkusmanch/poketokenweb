@@ -35,16 +35,50 @@ class CompanionStore:
         api: pokeapi.PokeAPI | None = None,
         sprite_store: sprites.SpriteStore | None = None,
         rng: random.Random | None = None,
+        growth_difficulty: float = balance.DEFAULT_DIFFICULTY,
+        shop_difficulty: float = balance.DEFAULT_DIFFICULTY,
     ) -> None:
         self.save_path = save_path
         self.state: CompanionState = save.load(save_path)
         self.api = api
         self.sprites = sprite_store
         self.rng = rng or random.Random()
+        # Preferences, not save data: they live in config.json alongside the
+        # other settings, so importing someone else's save cannot silently
+        # change your difficulty, and SaveTransfer stays untouched.
+        self.growth_difficulty = balance.clamp_difficulty(growth_difficulty)
+        self.shop_difficulty = balance.clamp_difficulty(shop_difficulty)
         # Held for one poll so the popup can show a celebration banner; the
         # notification fires immediately but the banner needs a render pass.
         self.celebration: dict | None = None
         self.last_events: companion.GrowthEvents | None = None
+
+    # --- difficulty ---------------------------------------------------------
+
+    def set_growth_difficulty(self, value) -> None:
+        """Apply a new growth multiplier, preserving the share already earned.
+
+        Deliberately does NOT hatch, evolve or graduate. Saving a setting must
+        not advance the game: a slider is not usage, and a companion that
+        levelled up because someone opened Settings would be indistinguishable
+        from one that levelled up because they worked.
+        """
+        clamped = balance.clamp_difficulty(value)
+        if clamped == self.growth_difficulty:
+            return
+        companion.rescale_banked_growth(self.state, self.growth_difficulty, clamped)
+        self.growth_difficulty = clamped
+        self._persist()
+
+    def set_shop_difficulty(self, value) -> None:
+        """Apply a new price multiplier. Prices are derived, so nothing to fix."""
+        self.shop_difficulty = balance.clamp_difficulty(value)
+
+    def egg_threshold(self) -> int:
+        return companion.egg_threshold(self.growth_difficulty)
+
+    def stage_threshold(self, mon) -> int:
+        return companion.stage_threshold(mon, self.growth_difficulty)
 
     # --- usage -------------------------------------------------------------
 
@@ -87,7 +121,11 @@ class CompanionStore:
 
         line = self._line_for_egg() if self.state.active is None else None
         self.last_events = companion.apply_usage(
-            self.state, delta, line_for_egg=line, rng=self.rng
+            self.state,
+            delta,
+            line_for_egg=line,
+            rng=self.rng,
+            growth_difficulty=self.growth_difficulty,
         )
         self._note_celebration(self.last_events)
         self._persist()
@@ -176,7 +214,8 @@ class CompanionStore:
         kind = companion.display_state(self.state, today_tokens, limit_warning)
         mon = self.state.active
         if mon is None:
-            progress = min(1.0, self.state.egg_usage / balance.EGG_HATCH_THRESHOLD)
+            hatch_at = self.egg_threshold()
+            progress = min(1.0, self.state.egg_usage / hatch_at)
             return {
                 "stage": "egg",
                 "label": f"\N{EGG}{round(progress * 100)}%",
@@ -191,9 +230,9 @@ class CompanionStore:
                 "status_message": l10n.t(f"status_{kind.lower()}", self.state.language),
             }
 
-        # Never balance.phase_threshold directly -- MonState.phase_threshold is
-        # the one place every growth multiplier is applied.
-        threshold = mon.phase_threshold
+        # Never balance.phase_threshold directly -- this accessor is the one
+        # place the repeat bonus AND difficulty are both applied.
+        threshold = self.stage_threshold(mon)
         # Remaining to the NEXT step: an evolution mid-line, graduation at the end.
         remaining = max(0, threshold - mon.used_at_stage)
         evo_line = []
@@ -248,12 +287,17 @@ class CompanionStore:
         return granted
 
     def buy(self, key: str) -> str:
-        message = shop.buy(self.state, key)
+        message = shop.buy(self.state, key, shop_difficulty=self.shop_difficulty)
         self._persist()
         return message
 
     def use_item(self, key: str) -> str:
-        message = shop.use_item(self.state, key, rng=self.rng)
+        message = shop.use_item(
+            self.state,
+            key,
+            rng=self.rng,
+            growth_difficulty=self.growth_difficulty,
+        )
         self._persist()
         return message
 
@@ -267,7 +311,7 @@ class CompanionStore:
     def shop_payload(self) -> list[dict]:
         spendable = self.state.spendable_tokens
         out = []
-        for e in shop.entries(self.state):
+        for e in shop.entries(self.state, self.shop_difficulty):
             if e.kind == "item":
                 sprite = self._item_sprite(e.key)
                 description = balance.ITEM_DESCRIPTION.get(e.key, "")

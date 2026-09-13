@@ -26,6 +26,8 @@ export const defaultConfig: AppConfig = {
   crit_threshold: 95,
   limit_display_mode: 'both',
   language: 'en',
+  growth_difficulty: 1,
+  shop_difficulty: 1,
 }
 
 export const sampleEvents: AppEvent[] = [

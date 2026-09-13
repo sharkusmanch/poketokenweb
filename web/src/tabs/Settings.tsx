@@ -25,6 +25,16 @@ const LANGUAGES: { value: AppConfig['language']; label: string }[] = [
 const MODES: AppConfig['limit_display_mode'][] = ['session', 'weekly', 'both']
 
 type NumericKey = 'refresh_interval' | 'warn_threshold' | 'crit_threshold'
+type DifficultyKey = 'growth_difficulty' | 'shop_difficulty'
+
+/** Mirrors poketokenweb.api.CONFIG_FLOAT_RANGES. */
+const DIFFICULTY = { min: 0.1, max: 2, step: 0.05 }
+
+/** A multiplier reads better as a percentage: 0.5 is "50%", i.e. half as much.
+ *  Rounded, because 0.05 steps on a float produce 65.00000000000001. */
+function asPercent(value: number): string {
+  return `${Math.round(value * 100)}%`
+}
 
 export function Settings({ config, strings, onSave }: SettingsProps) {
   // Drafts exist only so typing does not fire a request per keystroke; the
@@ -79,6 +89,38 @@ export function Settings({ config, strings, onSave }: SettingsProps) {
     }
     void submit(key, parsed)
   }
+
+  /**
+   * Difficulty commits on release, not on every drag frame: the engine
+   * rescales banked progress on each change, so a drag from 100% to 50% would
+   * otherwise fire ~20 rescales and 20 disk writes on the way.
+   */
+  const difficultyField = (key: DifficultyKey, label: string) => (
+    <label className="field" htmlFor={key}>
+      <span className="field-label">
+        {label} <span className="field-value">{asPercent(config[key])}</span>
+      </span>
+      <input
+        id={key}
+        name={key}
+        type="range"
+        className="slider"
+        min={DIFFICULTY.min}
+        max={DIFFICULTY.max}
+        step={DIFFICULTY.step}
+        defaultValue={config[key]}
+        key={`${key}-${config[key]}`}
+        onMouseUp={(event) => void submit(key, Number(event.currentTarget.value))}
+        onTouchEnd={(event) => void submit(key, Number(event.currentTarget.value))}
+        onKeyUp={(event) => void submit(key, Number(event.currentTarget.value))}
+      />
+      {saved === key ? (
+        <span className="field-ok" data-testid="save-ok">
+          Saved
+        </span>
+      ) : null}
+    </label>
+  )
 
   const numberField = (key: NumericKey, label: string, hint: string) => (
     <label className="field" htmlFor={key}>
@@ -167,6 +209,14 @@ export function Settings({ config, strings, onSave }: SettingsProps) {
             </span>
           ) : null}
         </label>
+      </section>
+
+      <section className="card" data-testid="difficulty-card">
+        <h2 className="card-title">{strings.difficulty}</h2>
+        <p className="muted">{strings.difficulty_hint}</p>
+        {difficultyField('growth_difficulty', strings.growth_difficulty ?? 'Growth')}
+        {difficultyField('shop_difficulty', strings.shop_difficulty ?? 'Shop prices')}
+        <p className="muted">{strings.difficulty_rescale_note}</p>
       </section>
     </div>
   )

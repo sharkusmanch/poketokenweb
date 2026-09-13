@@ -20,6 +20,7 @@ IMPORT-TIME I/O IS FORBIDDEN HERE.
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime
 from pathlib import Path
@@ -55,6 +56,8 @@ WEB_CONFIG_KEYS: frozenset[str] = frozenset(
         "crit_threshold",
         "limit_display_mode",
         "language",
+        "growth_difficulty",
+        "shop_difficulty",
     }
 )
 
@@ -65,6 +68,15 @@ CONFIG_RANGES: dict[str, tuple[int, int]] = {
     "refresh_interval": (30, 3600),
     "warn_threshold": (1, 100),
     "crit_threshold": (1, 100),
+}
+
+# Inclusive float bounds, mirroring poketokenbar.balance. Narrower than the
+# engine's clamp on purpose: the clamp is a last line of defence against a
+# hand-edited config file, while this rejects the request outright so the UI
+# can say why.
+CONFIG_FLOAT_RANGES: dict[str, tuple[float, float]] = {
+    "growth_difficulty": (0.1, 2.0),
+    "shop_difficulty": (0.1, 2.0),
 }
 
 CONFIG_ENUMS: dict[str, tuple[str, ...]] = {
@@ -334,6 +346,29 @@ def _as_int(value: object, key: str) -> int:
     raise ValidationError(f"{key} must be an integer")
 
 
+def _as_float(value: object, key: str) -> float:
+    """Float from JSON, matching what config._coerce() would later accept.
+
+    NaN and the infinities are rejected here rather than clamped: they arrive
+    only from a hand-written request, and silently turning one into 2.0 hides
+    a client bug. bool is an int subclass, so True would otherwise pass as 1.0.
+    """
+    if isinstance(value, bool):
+        raise ValidationError(f"{key} must be a number")
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        try:
+            number = float(value.strip())
+        except ValueError:
+            raise ValidationError(f"{key} must be a number") from None
+    else:
+        raise ValidationError(f"{key} must be a number")
+    if not math.isfinite(number):
+        raise ValidationError(f"{key} must be a finite number")
+    return number
+
+
 def validate_config(body: dict) -> tuple[str, str]:
     """Validate a settings change. Returns (key, value) as strings.
 
@@ -350,6 +385,13 @@ def validate_config(body: dict) -> tuple[str, str]:
 
     if key in CONFIG_ENUMS:
         return key, _allowlisted(value, CONFIG_ENUMS[key], f"{key} value")
+
+    if key in CONFIG_FLOAT_RANGES:
+        low_f, high_f = CONFIG_FLOAT_RANGES[key]
+        number_f = _as_float(value, key)
+        if not low_f <= number_f <= high_f:
+            raise ValidationError(f"{key} must be between {low_f} and {high_f}")
+        return key, repr(number_f)
 
     low, high = CONFIG_RANGES[key]
     number = _as_int(value, key)

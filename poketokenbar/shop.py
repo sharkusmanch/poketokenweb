@@ -27,15 +27,23 @@ class ShopEntry:
     owned: bool = False
 
 
-def entries(state: CompanionState) -> list[ShopEntry]:
-    """Everything on sale, cheapest first."""
+def entries(state: CompanionState, shop_difficulty: float = 1.0) -> list[ShopEntry]:
+    """Everything on sale, cheapest first.
+
+    Prices are scaled at this consumption site rather than in the constant
+    table, because graded egg prices derive from a RATIO of graduation_total --
+    scaling the table would let the GROWTH slider move shop pricing too.
+    """
+    def price(base: int) -> int:
+        return balance.scaled(base, shop_difficulty)
+
     out = [
-        ShopEntry("rareCandy", "item", balance.RARE_CANDY_PRICE, "Rare Candy"),
-        ShopEntry("mint", "item", balance.MINT_PRICE, "Mint"),
+        ShopEntry("rareCandy", "item", price(balance.RARE_CANDY_PRICE), "Rare Candy"),
+        ShopEntry("mint", "item", price(balance.MINT_PRICE), "Mint"),
         ShopEntry(
             "shinyCharm",
             "item",
-            balance.SHINY_CHARM_PRICE,
+            price(balance.SHINY_CHARM_PRICE),
             "Shiny Charm",
             # Passive and permanent: held, never consumed, bought once.
             owned=state.inventory.get("shinyCharm", 0) > 0,
@@ -48,7 +56,7 @@ def entries(state: CompanionState) -> list[ShopEntry]:
             Rarity.UNCOMMON: "Uncommon Egg",
             Rarity.RARE: "Rare Egg",
         }[tier]
-        out.append(ShopEntry(key, "egg", balance.egg_price(tier), label))
+        out.append(ShopEntry(key, "egg", price(balance.egg_price(tier)), label))
     return sorted(out, key=lambda e: e.price)
 
 
@@ -60,9 +68,13 @@ def _debit(state: CompanionState, price: int) -> None:
     state.spent_tokens += price
 
 
-def buy(state: CompanionState, key: str) -> str:
-    """Purchase one shop entry. Returns a short description of what happened."""
-    entry = next((e for e in entries(state) if e.key == key), None)
+def buy(state: CompanionState, key: str, shop_difficulty: float = 1.0) -> str:
+    """Purchase one shop entry. Returns a short description of what happened.
+
+    The price is recomputed from the SAME function the listing used, so a
+    display price and a charged price cannot drift apart.
+    """
+    entry = next((e for e in entries(state, shop_difficulty) if e.key == key), None)
     if entry is None:
         raise ShopError(f"unknown shop item: {key}")
 
@@ -92,8 +104,16 @@ def buy(state: CompanionState, key: str) -> str:
     return f"bought {entry.label}"
 
 
-def use_item(state: CompanionState, key: str, rng=None) -> str:
-    """Consume one held item."""
+def use_item(
+    state: CompanionState, key: str, rng=None, growth_difficulty: float = 1.0
+) -> str:
+    """Consume one held item.
+
+    ``growth_difficulty`` is threaded through because candy is applied via
+    apply_usage, which compares against the difficulty-scaled thresholds. The
+    candy's own XP is deliberately NOT scaled -- scaling both would cancel out
+    and make candy the one thing immune to difficulty.
+    """
     held = state.inventory.get(key, 0)
     if held <= 0:
         raise ShopError(f"no {key} in bag")
@@ -104,7 +124,9 @@ def use_item(state: CompanionState, key: str, rng=None) -> str:
         state.inventory[key] = held - 1
         # Routed through apply_usage so carry-over, evolution, and graduation
         # all behave exactly as they do for real usage.
-        companion.apply_usage(state, balance.RARE_CANDY_XP, rng=rng)
+        companion.apply_usage(
+            state, balance.RARE_CANDY_XP, rng=rng, growth_difficulty=growth_difficulty
+        )
         return "used Rare Candy"
 
     if key == "mint":
