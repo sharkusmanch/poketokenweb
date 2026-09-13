@@ -1,5 +1,5 @@
 import type { AppConfig, LimitWindow, Limits as LimitsPayload } from '../types'
-import { limitLevel, percent, resetsIn } from '../lib/format'
+import { limitLevel, percent, resetClock, resetsIn } from '../lib/format'
 
 interface LimitsProps {
   limits: LimitsPayload
@@ -23,6 +23,9 @@ function LimitRow({ id, label, window: limit, strings, config, now }: RowProps) 
   // and reads "normal" at 51% and at 97% alike.
   const level = limitLevel(limit.utilization, config.warn_threshold, config.crit_threshold)
   const countdown = resetsIn(limit.resets_at, now, strings.resetting_now ?? '')
+  // Beside the countdown, never instead of it: "4h 59m" answers "how long do I
+  // have", "20:00" answers "when can I work again". Both get asked.
+  const clock = resetClock(limit.resets_at, now)
   const width = Math.max(0, Math.min(100, limit.utilization))
 
   return (
@@ -44,6 +47,7 @@ function LimitRow({ id, label, window: limit, strings, config, now }: RowProps) 
       {countdown ? (
         <div className="limit-reset" data-testid={`limit-${id}-reset`}>
           {countdown}
+          {clock ? <span className="limit-clock"> ({clock})</span> : null}
         </div>
       ) : null}
     </div>

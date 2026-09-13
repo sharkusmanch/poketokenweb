@@ -79,6 +79,53 @@ export function resetsIn(
 }
 
 /**
+ * A reset within this window is shown as a bare wall-clock time; anything
+ * further out also names the weekday and day of month.
+ */
+export const RESET_CLOCK_WINDOW_MS = 6 * 60 * 60 * 1000
+
+function sameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+/**
+ * The absolute time a window resets, to sit beside the countdown.
+ *
+ * "in 2 days, 9 hr" does not tell you when you can work again; "Tue 15, 09:00"
+ * does. Near resets get the time alone, because the weekday would be noise
+ * when it is obviously today. Always 24-hour: a bare "9:00" next to a
+ * countdown is ambiguous, and the popover this ports from made the same call.
+ */
+export function resetClock(
+  iso: string | null | undefined,
+  now: number,
+  locale?: string,
+  timeZone?: string,
+): string {
+  if (!iso) return ''
+  const at = Date.parse(iso)
+  if (Number.isNaN(at)) return ''
+
+  const when = new Date(at)
+  const nearby = at - now <= RESET_CLOCK_WINDOW_MS || sameLocalDay(when, new Date(now))
+  const options: Intl.DateTimeFormatOptions = {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }
+  if (!nearby) {
+    options.weekday = 'short'
+    options.day = 'numeric'
+  }
+  if (timeZone) options.timeZone = timeZone
+  return new Intl.DateTimeFormat(locale, options).format(when)
+}
+
+/**
  * `updated_at` is unix SECONDS (float) — not milliseconds.
  * The tolerance comes from /api/config's refresh_interval; hardcoding 120
  * mislabels every deployment that polls on any other cadence.

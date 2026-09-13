@@ -1,5 +1,6 @@
 import type { AppConfig, MonCompanion, StatePayload } from '../types'
 import { Limits } from '../components/Limits'
+import { MonthTrend } from '../components/MonthTrend'
 import { Sprite } from '../components/Sprite'
 import { compact, cost } from '../lib/format'
 
@@ -111,6 +112,7 @@ function Companion({ state }: { state: StatePayload }) {
 export function Home({ state, config, now = Date.now() }: HomeProps) {
   const strings = state.strings
   const { week, month } = state.periods
+  const series = state.periods.month_daily ?? []
   const burnSession = state.burn.session
   const rateTemplate = strings.at_this_rate ?? ''
 
@@ -147,6 +149,8 @@ export function Home({ state, config, now = Date.now() }: HomeProps) {
           ) : null}
         </section>
       ) : null}
+
+      <MonthTrend series={series} strings={strings} />
 
       <Limits limits={state.limits} strings={strings} config={config} now={now} />
 

@@ -155,6 +155,23 @@ export interface Limits {
 export interface Period {
   tokens: number
   cost: number
+  cost_coverage?: CostCoverage
+}
+
+/** One day of the current month. Empty days are present with tokens: 0 —
+ *  a bar's POSITION is its date, so omitting a day shifts every later bar. */
+export interface MonthDay {
+  date: string
+  tokens: number
+  cost: number
+}
+
+/** Where a cost total came from. "$0.00" and "we could not price this" are
+ *  different claims, so they must not render the same. */
+export interface CostCoverage {
+  reported: boolean
+  estimated: boolean
+  unknown: boolean
 }
 
 /** `{}` until the burn tracker has MIN_SAMPLES=3 samples. */
@@ -206,7 +223,7 @@ export interface StatePayload {
   catch_log: CatchLogEntry[]
   rarity_counts: RarityCounts
   catch_counts: RarityCounts
-  periods: { week?: Period; month?: Period }
+  periods: { week?: Period; month?: Period; month_daily?: MonthDay[] }
   strings: Record<string, string>
   celebration: Celebration
   burn: { session?: BurnForecast; weekly?: BurnForecast }

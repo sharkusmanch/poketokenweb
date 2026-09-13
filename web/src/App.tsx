@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppConfig, AppEvent, StatePayload, TabId } from './types'
 import { fetchConfig, fetchEvents, fetchState, postCommand, postConfig } from './lib/api'
 import { isStale } from './lib/format'
@@ -13,6 +13,16 @@ import './styles.css'
 
 /** Used only until GET /api/config answers; never shown as a settings value. */
 const FALLBACK_INTERVAL = 120
+
+/**
+ * Shortest gap between two reconnect-triggered reads.
+ *
+ * A flapping network fires `online` repeatedly, and tab switching fires
+ * `visibilitychange` on every switch. Without this, putting the phone down and
+ * picking it up a few times would hammer the daemon with full re-reads, and
+ * each one walks the scan cache.
+ */
+export const RECONNECT_DEBOUNCE_MS = 5_000
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -65,6 +75,33 @@ export function App() {
     }, interval * 1000)
     return () => window.clearInterval(timer)
   }, [interval, loadState])
+
+  /**
+   * Read again the moment the app can actually reach the server.
+   *
+   * On a phone the interval timer is the wrong instrument: the tab is frozen
+   * while backgrounded, so coming back to it showed whatever was on screen
+   * when it was put down — with the staleness banner up — until the next tick,
+   * which could be minutes away.
+   */
+  const lastReconnect = useRef(0)
+  useEffect(() => {
+    const refreshIfDue = () => {
+      const now = Date.now()
+      if (now - lastReconnect.current < RECONNECT_DEBOUNCE_MS) return
+      lastReconnect.current = now
+      void loadState()
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshIfDue()
+    }
+    window.addEventListener('online', refreshIfDue)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('online', refreshIfDue)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [loadState])
 
   const runCommand = useCallback(
     async (name: 'buy' | 'use', key: string) => {

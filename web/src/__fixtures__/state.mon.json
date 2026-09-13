@@ -379,7 +379,74 @@
     "month": {
       "tokens": 2669209109,
       "cost": 2022.21
-    }
+    },
+    "month_daily": [
+      {
+        "date": "2026-09-01",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-02",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-03",
+        "tokens": 41000000,
+        "cost": 32.8
+      },
+      {
+        "date": "2026-09-04",
+        "tokens": 120500000,
+        "cost": 96.4
+      },
+      {
+        "date": "2026-09-05",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-06",
+        "tokens": 3200000,
+        "cost": 2.56
+      },
+      {
+        "date": "2026-09-07",
+        "tokens": 18900000,
+        "cost": 15.12
+      },
+      {
+        "date": "2026-09-08",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-09",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-10",
+        "tokens": 92000000,
+        "cost": 73.6
+      },
+      {
+        "date": "2026-09-11",
+        "tokens": 240000000,
+        "cost": 192.0
+      },
+      {
+        "date": "2026-09-12",
+        "tokens": 51000000,
+        "cost": 40.8
+      },
+      {
+        "date": "2026-09-13",
+        "tokens": 7400000,
+        "cost": 5.92
+      }
+    ]
   },
   "strings": {
     "home": "Home",
@@ -452,7 +519,6 @@
     "stat_speed": "Speed",
     "detail_unavailable": "Details could not be loaded.",
     "month_trend": "This month, day by day",
-    "no_usage_this_month": "No usage recorded this month yet.",
     "egg_needs_companion": "Hatch your egg first.",
     "settings": "Settings",
     "difficulty": "Difficulty",

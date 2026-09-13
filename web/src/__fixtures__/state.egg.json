@@ -186,7 +186,34 @@
     "month": {
       "tokens": 2669209109,
       "cost": 2022.2191918000065
-    }
+    },
+    "month_daily": [
+      {
+        "date": "2026-09-01",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-02",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-03",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-04",
+        "tokens": 0,
+        "cost": 0.0
+      },
+      {
+        "date": "2026-09-05",
+        "tokens": 0,
+        "cost": 0.0
+      }
+    ]
   },
   "strings": {
     "home": "Home",
@@ -259,7 +286,6 @@
     "stat_speed": "Speed",
     "detail_unavailable": "Details could not be loaded.",
     "month_trend": "This month, day by day",
-    "no_usage_this_month": "No usage recorded this month yet.",
     "egg_needs_companion": "Hatch your egg first.",
     "settings": "Settings",
     "difficulty": "Difficulty",

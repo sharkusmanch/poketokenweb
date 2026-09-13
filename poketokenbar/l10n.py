@@ -136,10 +136,6 @@ STRINGS: dict[str, tuple[str, str, str, str]] = {
     ),
     # month trend
     "month_trend": ("This month, day by day", "이번 달 일별 사용량", "今月の日別使用量", "Este mes, día a día"),
-    "no_usage_this_month": (
-        "No usage recorded this month yet.", "이번 달 사용 기록이 아직 없어요.",
-        "今月の使用記録はまだありません。", "Aún no hay uso registrado este mes.",
-    ),
     # shop gating
     "egg_needs_companion": (
         "Hatch your egg first.", "지금 있는 알이 먼저 부화해야 해요.",

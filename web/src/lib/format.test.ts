@@ -7,6 +7,7 @@ import {
   minutesUntil,
   formatDuration,
   resetsIn,
+  resetClock,
   isStale,
   formatCaughtAt,
   STALE_FACTOR,
@@ -115,5 +116,44 @@ describe('formatCaughtAt — caught_at is float | None in the engine', () => {
     expect(text).not.toBe('')
     expect(text).not.toMatch(/1969/)
     expect(text).toMatch(/2026/)
+  })
+})
+
+describe('resetClock', () => {
+  const now = Date.parse('2026-09-13T14:00:00Z')
+
+  it('shows the time alone for a reset within six hours', () => {
+    const text = resetClock('2026-09-13T18:30:00Z', now, 'en-GB', 'UTC')
+    expect(text).toBe('18:30')
+  })
+
+  it('names the weekday for a reset days away', () => {
+    // "in 2 days, 9 hr" does not tell you when you can work again.
+    const text = resetClock('2026-09-15T09:00:00Z', now, 'en-GB', 'UTC')
+    expect(text).toContain('09:00')
+    expect(text).toMatch(/Tue/)
+    expect(text).toContain('15')
+  })
+
+  it('shows the time alone for later today even beyond six hours', () => {
+    const text = resetClock('2026-09-13T23:30:00Z', now, 'en-GB', 'UTC')
+    expect(text).toBe('23:30')
+  })
+
+  it('is always 24-hour, so it cannot be read as the wrong half of the day', () => {
+    const text = resetClock('2026-09-13T19:05:00Z', now, 'en-US', 'UTC')
+    expect(text).toBe('19:05')
+    expect(text).not.toMatch(/PM|AM/i)
+  })
+
+  it('returns nothing for a missing or unparsable instant', () => {
+    expect(resetClock(null, now)).toBe('')
+    expect(resetClock(undefined, now)).toBe('')
+    expect(resetClock('not-a-date', now)).toBe('')
+  })
+
+  it('still renders a reset that has already passed', () => {
+    // resetsIn switches to "resetting now"; the clock should still say when.
+    expect(resetClock('2026-09-13T13:00:00Z', now, 'en-GB', 'UTC')).toBe('13:00')
   })
 })

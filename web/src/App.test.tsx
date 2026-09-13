@@ -226,3 +226,53 @@ describe('loading and failure', () => {
     expect(vi.mocked(api.fetchState).mock.calls.length).toBeGreaterThan(before)
   })
 })
+
+describe('refreshing on reconnect', () => {
+  /** jsdom's visibilityState is a getter, so it has to be redefined. */
+  function setVisibility(value: DocumentVisibilityState) {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => value,
+    })
+  }
+
+  function reads(): number {
+    return vi.mocked(api.fetchState).mock.calls.length
+  }
+
+  it('re-reads the moment the network comes back', async () => {
+    await renderApp()
+    const before = reads()
+    window.dispatchEvent(new Event('online'))
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
+
+  it('re-reads when the tab becomes visible again', async () => {
+    // On a phone the interval timer is the wrong instrument: a backgrounded
+    // tab is frozen, so coming back showed a stale screen until the next tick.
+    await renderApp()
+    const before = reads()
+    setVisibility('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
+
+  it('does nothing when the tab is being hidden', async () => {
+    await renderApp()
+    const before = reads()
+    setVisibility('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(reads()).toBe(before)
+    setVisibility('visible')
+  })
+
+  it('debounces a flapping connection into a single read', async () => {
+    await renderApp()
+    const before = reads()
+    for (let i = 0; i < 5; i += 1) window.dispatchEvent(new Event('online'))
+    await waitFor(() => expect(reads()).toBe(before + 1))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(reads()).toBe(before + 1)
+  })
+})

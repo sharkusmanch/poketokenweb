@@ -12,7 +12,7 @@ describe('fixture ↔ engine contract', () => {
     expect(typeof eggState.updated_at).toBe('number')
     // unix SECONDS, not milliseconds: ~1.78e9, not ~1.78e12.
     expect(eggState.updated_at).toBeLessThan(2e10)
-    expect(Object.keys(eggState.strings)).toHaveLength(78)
+    expect(Object.keys(eggState.strings)).toHaveLength(77)
     // Settings used to be the one screen the engine had no string for; it now
     // carries one, so no label in the app is hardcoded English any more.
     expect(eggState.strings).toHaveProperty('settings')
