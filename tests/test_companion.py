@@ -60,9 +60,22 @@ def test_hatching_consumes_a_premium_egg_guarantee():
 # --- growth ----------------------------------------------------------------
 
 
-def _hatched(forms=3, rarity=Rarity.COMMON):
+def _hatched(forms=3, rarity=Rarity.COMMON, rng=None):
+    """A hatched, definitely-not-Ditto companion.
+
+    The rng must be seeded. Left to chance, roll_ditto fires on 1 in 128 common
+    multi-form hatches, and a revealed Ditto changes what current_id and the
+    graduation chain are -- so any test asserting chain shape failed about once
+    in every 128 runs, with nothing in the output to explain it.
+    """
     s = _state()
-    apply_usage(s, balance.EGG_HATCH_THRESHOLD, line_for_egg=_line(forms, rarity))
+    apply_usage(
+        s,
+        balance.EGG_HATCH_THRESHOLD,
+        line_for_egg=_line(forms, rarity),
+        rng=rng or random.Random(1),
+    )
+    assert s.active.ditto_disguise is None, "this helper must not produce a Ditto"
     return s
 
 

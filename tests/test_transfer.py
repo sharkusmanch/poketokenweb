@@ -130,3 +130,11 @@ def test_summary_describes_progress_for_the_overwrite_prompt():
 def test_suggested_filename_is_dated():
     assert transfer.suggested_filename().startswith("poketokenbar-save-")
     assert transfer.suggested_filename().endswith(".json")
+
+
+def test_the_envelope_version_tracks_the_payload_schema():
+    """Two numbers, one bump. Left behind, transfer's "refuse the future" check
+    is inert: an older build accepts a newer save and writes it back stripped.
+    The pre-existing test for this used a hand-written format_version: 99,
+    which is a path the real schema bump never takes."""
+    assert transfer.FORMAT_VERSION == save.SCHEMA_VERSION
